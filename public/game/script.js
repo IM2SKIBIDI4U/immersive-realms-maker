@@ -107,6 +107,11 @@ const INITIAL_RIVALS = [
 ];
 
 const defaultInv = { noodle: 10, broth: 10, spice: 10, egg: 10, boba: 10 };
+const SAVE_KEY = 'RamenUltimateData';
+const SAVE_BACKUP_KEY = 'RamenUltimateBackup';
+const SAVE_VERSION = 2;
+const SAVE_SALT = 'rm-fair-kitchen-2026';
+const MAX_OFFLINE_MS = 12 * 60 * 60 * 1000;
 let game = {
     wallet: 150, monkeyMoney: 0, turfMult: 1, lastSaveTime: Date.now(),
     tablesOwned: 1, idxTable: 0, idxRecipe: 0, idxWok: 0, idxAuto: 0, idxSpecial: 0, currentMenuPrice: 50,
@@ -247,6 +252,19 @@ function normalizeGameState() {
         game[key] = Number.isFinite(game[key]) ? game[key] : 0;
     });
     if (!Array.isArray(game.missions) || game.missions.length !== 3) game.missions = createMissionSet();
+    game.wallet = Math.max(0, Math.min(1e100, game.wallet));
+    game.monkeyMoney = Math.max(0, Math.min(50000, Math.floor(game.monkeyMoney)));
+    game.turfMult = Math.max(1, Math.min(100, game.turfMult));
+    game.tablesOwned = Math.max(1, Math.min(1000, Math.floor(game.tablesOwned)));
+    ['idxTable', 'idxRecipe', 'idxWok', 'idxAuto', 'idxAds'].forEach((key) => {
+        game[key] = Math.max(0, Math.min(999, Math.floor(game[key])));
+    });
+    Object.keys(game.inv).forEach((key) => {
+        game.inv[key] = Math.max(0, Math.min(1e12, Math.floor(Number(game.inv[key]) || 0)));
+    });
+    Object.keys(game.staff).forEach((key) => {
+        game.staff[key] = Math.max(0, Math.min(1000, Math.floor(Number(game.staff[key]) || 0)));
+    });
 }
 
 function getRestaurantLevel() {
@@ -878,6 +896,35 @@ function drawFpsAtmosphere(context, width, height, horizon, timestamp) {
     context.fillStyle = floor;
     context.fillRect(0, horizon, width, height - horizon);
     context.save();
+    const ceilingDepth = Math.max(24, horizon * 0.14);
+    context.fillStyle = game.nightMode ? 'rgba(90,73,117,.16)' : 'rgba(119,72,38,.22)';
+    for (let beam = -1; beam <= 5; beam++) {
+        const x = beam * width * 0.24 + ((fpsPlayer.angle / (Math.PI * 2)) * width * 0.2);
+        context.beginPath();
+        context.moveTo(width / 2 + (x - width / 2) * 0.2, horizon * 0.07);
+        context.lineTo(width / 2 + (x - width / 2) * 0.5, ceilingDepth);
+        context.lineTo(width / 2 + (x + width * 0.08 - width / 2) * 0.5, ceilingDepth);
+        context.lineTo(width / 2 + (x + width * 0.08 - width / 2) * 0.2, horizon * 0.07);
+        context.closePath();
+        context.fill();
+    }
+    const lampY = Math.max(42, horizon * 0.19);
+    [0.24, 0.5, 0.76].forEach((position, index) => {
+        const sway = Math.sin(timestamp / 1800 + index) * 2;
+        const lampX = width * position + sway;
+        const pool = context.createRadialGradient(lampX, lampY + 22, 2, lampX, lampY + 22, width * 0.17);
+        pool.addColorStop(0, game.nightMode ? 'rgba(179,151,255,.2)' : 'rgba(255,219,159,.3)');
+        pool.addColorStop(1, 'rgba(0,0,0,0)');
+        context.fillStyle = pool;
+        context.fillRect(lampX - width * .18, lampY, width * .36, horizon * .8);
+        context.strokeStyle = 'rgba(35,22,14,.85)';
+        context.lineWidth = 3;
+        context.beginPath(); context.moveTo(lampX, 0); context.lineTo(lampX, lampY); context.stroke();
+        context.fillStyle = game.nightMode ? '#9d85d8' : '#f2b75d';
+        context.beginPath(); context.ellipse(lampX, lampY, 17, 8, 0, 0, Math.PI * 2); context.fill();
+    });
+    context.restore();
+    context.save();
     context.globalAlpha = game.nightMode ? 0.13 : 0.2;
     context.strokeStyle = game.nightMode ? '#6c5ce7' : '#d7ad74';
     context.lineWidth = 1;
@@ -887,6 +934,17 @@ function drawFpsAtmosphere(context, width, height, horizon, timestamp) {
     }
     for (let x = -width; x < width * 2; x += 90) {
         context.beginPath(); context.moveTo(width / 2, horizon); context.lineTo(x + drift, height); context.stroke();
+    }
+    context.restore();
+    context.save();
+    context.globalAlpha = game.nightMode ? 0.09 : 0.13;
+    context.fillStyle = '#0e0805';
+    for (let row = 0, y = horizon + 22; y < height; row++, y += Math.max(22, (y - horizon) * .2)) {
+        const tileHeight = Math.max(1, (y - horizon) * .025);
+        context.fillRect(0, y, width, tileHeight);
+        const spacing = Math.max(42, (y - horizon) * .42);
+        const offset = row % 2 ? spacing / 2 : 0;
+        for (let x = -spacing + offset; x < width + spacing; x += spacing) context.fillRect(x, y, 1, Math.max(4, tileHeight * 5));
     }
     context.restore();
     const glow = context.createRadialGradient(width * 0.5, horizon * 0.24, 10, width * 0.5, horizon * 0.24, width * 0.48);
@@ -900,6 +958,24 @@ function drawFpsAtmosphere(context, width, height, horizon, timestamp) {
         const y = (i * 97) % Math.max(1, horizon);
         context.fillRect(x, y, 1.5, 1.5);
     }
+}
+
+function drawFpsFinish(context, width, height, horizon, timestamp) {
+    const lowerLight = context.createRadialGradient(width * .5, horizon + height * .12, 8, width * .5, horizon + height * .12, width * .62);
+    lowerLight.addColorStop(0, game.nightMode ? 'rgba(99,82,145,.055)' : 'rgba(255,202,126,.075)');
+    lowerLight.addColorStop(1, 'rgba(0,0,0,0)');
+    context.fillStyle = lowerLight;
+    context.fillRect(0, horizon, width, height - horizon);
+    context.save();
+    context.globalAlpha = .035;
+    context.fillStyle = '#fff4da';
+    const seed = Math.floor(timestamp / 90);
+    for (let i = 0; i < 90; i++) {
+        const x = (i * 137 + seed * 29) % width;
+        const y = (i * 83 + seed * 17) % height;
+        context.fillRect(x, y, 1, 1);
+    }
+    context.restore();
 }
 
 function drawFpsMinimap() {
@@ -1259,6 +1335,7 @@ function renderFpsScene(timestamp = 0) {
         .map((position, index) => ({ ...position, index, distance: Math.hypot(position.x - fpsPlayer.x, position.y - fpsPlayer.y) }))
         .sort((a, b) => b.distance - a.distance)
         .forEach(table => drawFpsTable(context, table, width, height));
+    drawFpsFinish(context, width, height, horizon, timestamp);
     const carried = getFpsCarryingCount();
     if (carried) {
         context.save();
@@ -1951,28 +2028,6 @@ function triggerEvent(type) {
     }
 }
 
-function nukeRivals() {
-    if (!confirm('Defeat every rival and claim all remaining turf bonuses?')) return;
-
-    let bonus = 0;
-    game.rivals.forEach(rival => {
-        if (rival.hp > 0) {
-            rival.hp = 0;
-            bonus += rival.multReward;
-        }
-    });
-    game.turfMult += bonus;
-    playSound('cash');
-    saveGame();
-    updateUI();
-    renderTurfPanel();
-}
-
-function closeAdmin() {
-    const adminPanel = document.getElementById('admin-panel');
-    if (adminPanel) adminPanel.classList.add('hidden');
-}
-
 let goldenMonkeyTimer;
 function scheduleGoldenMonkey() {
     clearTimeout(goldenMonkeyTimer);
@@ -2009,56 +2064,96 @@ function claimGoldenMonkey(monkey) {
     saveGame();
 }
 
-let typed = ""; document.addEventListener('keydown', (e) => { typed += e.key.toLowerCase(); if (typed.endsWith("idk")) { let ap = document.getElementById('admin-panel'); if(ap) ap.classList.remove('hidden'); typed = ""; } if (typed.length > 20) typed = typed.slice(-20); });
-function cheatMoney(amt) { game.wallet += amt; saveGame(); updateUI(); }
-function setCustomMoney() { let val = parseFloat(document.getElementById('custom-money').value); if(!isNaN(val)) { game.wallet = val; saveGame(); updateUI(); } }
-function adminMaxIngredients() { game.inv.noodle=1e15; game.inv.broth=1e15; game.inv.spice=1e15; game.inv.egg=1e15; game.inv.boba=1e15; if(document.getElementById('out-of-stock-msg')) document.getElementById('out-of-stock-msg').classList.add('hidden'); saveGame(); updateUI(); }
-function cheatStars() { game.monkeyMoney++; saveGame(); updateUI(); }
+function hashSavePayload(payload) {
+    let hash = 2166136261;
+    const source = `${SAVE_SALT}|${payload}|${SAVE_VERSION}`;
+    for (let index = 0; index < source.length; index++) {
+        hash ^= source.charCodeAt(index);
+        hash = Math.imul(hash, 16777619);
+    }
+    return (hash >>> 0).toString(36);
+}
 
-function adminMaxEverything() {
-    game.wallet = 1e50; 
-    game.monkeyMoney = 1e9;
-    game.tablesOwned = 1000; 
-    game.idxTable = 999;
-    game.idxRecipe = 999; 
-    game.idxWok = 999;
-    game.idxAuto = 999;
-    game.idxAds = 999;
-    adminMaxIngredients();
-    saveGame();
-    updateUI();
-    location.reload();
+function createSaveEnvelope() {
+    const payload = JSON.stringify(game);
+    return JSON.stringify({ version: SAVE_VERSION, payload, checksum: hashSavePayload(payload) });
+}
+
+function readSaveEnvelope(raw) {
+    if (!raw) return null;
+    const envelope = JSON.parse(raw);
+    if (envelope && envelope.version === SAVE_VERSION && typeof envelope.payload === 'string') {
+        if (envelope.checksum !== hashSavePayload(envelope.payload)) throw new Error('Save checksum mismatch');
+        return JSON.parse(envelope.payload);
+    }
+    // Import older saves once, then immediately rewrite them in protected form.
+    if (envelope && typeof envelope === 'object' && Number.isFinite(envelope.wallet)) return envelope;
+    throw new Error('Unsupported save format');
+}
+
+function isPlausibleSave(candidate) {
+    if (!candidate || typeof candidate !== 'object') return false;
+    const finiteKeys = ['wallet', 'monkeyMoney', 'turfMult', 'tablesOwned', 'idxTable', 'idxRecipe', 'idxWok', 'idxAuto', 'idxAds', 'lastSaveTime'];
+    if (!finiteKeys.every(key => Number.isFinite(candidate[key]))) return false;
+    if (candidate.wallet < 0 || candidate.wallet > 1e100) return false;
+    if (candidate.monkeyMoney < 0 || candidate.monkeyMoney > 50000) return false;
+    if (candidate.tablesOwned < 1 || candidate.tablesOwned > 1000) return false;
+    if (candidate.idxTable < 0 || candidate.idxTable > 999 || candidate.tablesOwned > candidate.idxTable + 1) return false;
+    if ([candidate.idxRecipe, candidate.idxWok, candidate.idxAuto, candidate.idxAds].some(value => value < 0 || value > 999)) return false;
+    if (candidate.lastSaveTime > Date.now() + 5 * 60 * 1000) return false;
+    return true;
 }
 
 function saveGame() {
+    normalizeGameState();
     game.lastSaveTime = Date.now();
-    localStorage.setItem('RamenUltimateData', JSON.stringify(game));
+    const current = localStorage.getItem(SAVE_KEY);
+    if (current) {
+        try {
+            const previous = readSaveEnvelope(current);
+            if (isPlausibleSave(previous)) localStorage.setItem(SAVE_BACKUP_KEY, current);
+        } catch (_) {
+            // Never preserve a modified save as the trusted backup.
+        }
+    }
+    localStorage.setItem(SAVE_KEY, createSaveEnvelope());
 }
 
 function loadGame() {
-    let saved = localStorage.getItem('RamenUltimateData');
-    if (saved) {
+    const primary = localStorage.getItem(SAVE_KEY);
+    const backup = localStorage.getItem(SAVE_BACKUP_KEY);
+    let loaded = null;
+    let recovered = false;
+    for (const raw of [primary, backup]) {
+        if (!raw || loaded) continue;
         try {
-            let parsed = JSON.parse(saved);
-            game = Object.assign(game, parsed);
+            const candidate = readSaveEnvelope(raw);
+            if (!isPlausibleSave(candidate)) throw new Error('Impossible progress values');
+            loaded = candidate;
+            recovered = raw === backup;
         } catch (error) {
-            localStorage.removeItem('RamenUltimateData');
-            console.warn('Saved game was invalid. Starting a fresh restaurant.', error);
+            console.warn('Rejected modified or invalid restaurant progress.', error.message);
         }
-
-        let now = Date.now();
-        let timeDiff = now - (game.lastSaveTime || now);
-        let secondsAway = Math.floor(timeDiff / 1000);
-
+    }
+    if (loaded) {
+        game = Object.assign(game, loaded);
+        const now = Date.now();
+        const timeDiff = Math.max(0, Math.min(MAX_OFFLINE_MS, now - (game.lastSaveTime || now)));
+        const secondsAway = Math.floor(timeDiff / 1000);
         if (secondsAway > 60) {
             if(document.getElementById('offline-earned')) document.getElementById('offline-earned').innerText = "0";
             if(document.getElementById('offline-time')) document.getElementById('offline-time').innerText = `${Math.floor(secondsAway/60)} Minutes`;
             if(document.getElementById('offline-modal')) document.getElementById('offline-modal').classList.remove('hidden');
         }
         game.lastSaveTime = now;
+    } else if (primary || backup) {
+        localStorage.removeItem(SAVE_KEY);
+        localStorage.removeItem(SAVE_BACKUP_KEY);
+        setTimeout(() => showAchievementToast({ icon: '🛡️', title: 'Modified save rejected' }), 300);
     }
     normalizeGameState();
     resetMissionsIfNeeded();
+    if (loaded && (recovered || !primary?.includes(`\"version\":${SAVE_VERSION}`))) saveGame();
 }
 
 function closeOfflineModal() {
