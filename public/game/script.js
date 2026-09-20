@@ -458,6 +458,12 @@ let fpsContext = null;
 let fpsCookingTimer = null;
 let takeoutQueue = [];
 let takeoutSequence = 0;
+let fpsStamina = 100;
+let fpsCrouched = false;
+let fpsFlashlight = false;
+let fpsMapVisible = true;
+let fpsBob = 0;
+let fpsMoveBlend = 0;
 
 function normalizeFpsAngle(angle) {
     while (angle > Math.PI) angle -= Math.PI * 2;
@@ -591,6 +597,24 @@ function interactWithFpsTable() {
     if (!target) return;
     const seat = seats[target.index];
     if (!seat || !seat.occupied || !seat.charData) return;
+    const group = getFpsOrderGroup(target.index);
+    if (seat.needsMenu && group.length > 1) {
+        if (game.physical.activeOrder !== null) {
+            playSound('error');
+            return;
+        }
+        group.forEach(groupIndex => {
+            seats[groupIndex].needsMenu = false;
+            seats[groupIndex].patience = 100;
+        });
+        game.physical.activeOrder = target.index;
+        game.physical.ingredientsReadyFor = null;
+        playSound('serve');
+        updateFpsHud();
+        updateUI();
+        saveGame();
+        return;
+    }
     if (seat.needsMenu) {
         if (game.physical.activeOrder !== null) {
             playSound('error');
@@ -606,9 +630,7 @@ function interactWithFpsTable() {
         saveGame();
         return;
     }
-    const group = getFpsOrderGroup(target.index);
-    if (group.length > 1 && seat.needsMenu) group.forEach(groupIndex => interactWithFpsTableAtIndex(groupIndex));
-    else interactWithFpsTableAtIndex(target.index);
+    interactWithFpsTableAtIndex(target.index);
 }
 
 function interactWithFpsTableAtIndex(index) {
@@ -751,6 +773,10 @@ function updateFpsHud() {
     if (!economy) return;
     const physical = game.physical;
     economy.innerText = `Cash $${formatMoney(game.wallet)} · Orders ${physical.activeOrder === null ? 0 : 1}/${physical.capacity} · Carrying ${getFpsCarryingCount()}/${physical.capacity}`;
+    const staminaBar = document.getElementById('fps-stamina-bar');
+    if (staminaBar) staminaBar.style.width = `${fpsStamina}%`;
+    const stance = document.getElementById('fps-stance');
+    if (stance) stance.innerText = fpsCrouched ? 'CROUCHED' : (fpsKeys.shift && fpsStamina > 0 ? 'SPRINTING' : 'STANDING');
 }
 
 function getFpsUpgradeDefinitions() {
@@ -818,8 +844,13 @@ function updateFpsMovement(delta) {
     const verticalLook = (fpsKeys.arrowup ? 1 : 0) - (fpsKeys.arrowdown ? 1 : 0);
     if (swivel) fpsPlayer.angle += swivel * delta * 1.8;
     if (verticalLook) fpsPlayer.pitch = Math.max(-0.62, Math.min(0.62, fpsPlayer.pitch + verticalLook * delta * 1.5));
-    if (!forward && !strafe) return;
-    const sprint = fpsKeys.shift ? 1.65 : 1;
+    const moving = Boolean(forward || strafe);
+    const sprinting = moving && fpsKeys.shift && !fpsCrouched && fpsStamina > 0;
+    fpsStamina = Math.max(0, Math.min(100, fpsStamina + (sprinting ? -30 : 18) * delta));
+    fpsMoveBlend += ((moving ? 1 : 0) - fpsMoveBlend) * Math.min(1, delta * 9);
+    if (!moving) return;
+    const sprint = sprinting ? 1.65 : (fpsCrouched ? 0.55 : 1);
+    fpsBob += delta * (sprinting ? 13 : fpsCrouched ? 4 : 8);
     const speed = delta * (2.8 + game.physical.speedLevel * 0.3) * sprint;
     const length = Math.sqrt(forward * forward + strafe * strafe) || 1;
     const dx = ((Math.cos(fpsPlayer.angle) * forward) + (Math.cos(fpsPlayer.angle + Math.PI / 2) * strafe)) / length * speed;
@@ -828,6 +859,64 @@ function updateFpsMovement(delta) {
     const nextY = fpsPlayer.y + dy;
     if (!isFpsWall(nextX, fpsPlayer.y) && !isFpsObjectBlocked(nextX, fpsPlayer.y)) fpsPlayer.x = nextX;
     if (!isFpsWall(fpsPlayer.x, nextY) && !isFpsObjectBlocked(fpsPlayer.x, nextY)) fpsPlayer.y = nextY;
+}
+
+function drawFpsAtmosphere(context, width, height, horizon, timestamp) {
+    const ceiling = context.createLinearGradient(0, 0, 0, horizon);
+    ceiling.addColorStop(0, game.nightMode ? '#08090d' : '#17120e');
+    ceiling.addColorStop(1, game.nightMode ? '#171323' : '#4a3424');
+    context.fillStyle = ceiling;
+    context.fillRect(0, 0, width, horizon);
+    const floor = context.createLinearGradient(0, horizon, 0, height);
+    floor.addColorStop(0, game.nightMode ? '#17131c' : '#443029');
+    floor.addColorStop(1, game.nightMode ? '#070709' : '#17100d');
+    context.fillStyle = floor;
+    context.fillRect(0, horizon, width, height - horizon);
+    context.save();
+    context.globalAlpha = game.nightMode ? 0.13 : 0.2;
+    context.strokeStyle = game.nightMode ? '#6c5ce7' : '#d7ad74';
+    context.lineWidth = 1;
+    const drift = ((fpsPlayer.x + fpsPlayer.y) * 18) % 46;
+    for (let y = horizon + 18; y < height; y += Math.max(18, (y - horizon) * 0.22)) {
+        context.beginPath(); context.moveTo(0, y); context.lineTo(width, y); context.stroke();
+    }
+    for (let x = -width; x < width * 2; x += 90) {
+        context.beginPath(); context.moveTo(width / 2, horizon); context.lineTo(x + drift, height); context.stroke();
+    }
+    context.restore();
+    const glow = context.createRadialGradient(width * 0.5, horizon * 0.24, 10, width * 0.5, horizon * 0.24, width * 0.48);
+    glow.addColorStop(0, game.nightMode ? 'rgba(224,86,253,.13)' : 'rgba(255,214,151,.16)');
+    glow.addColorStop(1, 'rgba(0,0,0,0)');
+    context.fillStyle = glow;
+    context.fillRect(0, 0, width, height);
+    context.fillStyle = `rgba(255,255,255,${0.012 + Math.sin(timestamp / 900) * 0.004})`;
+    for (let i = 0; i < 18; i++) {
+        const x = (i * 173 + timestamp * 0.006) % width;
+        const y = (i * 97) % Math.max(1, horizon);
+        context.fillRect(x, y, 1.5, 1.5);
+    }
+}
+
+function drawFpsMinimap() {
+    const map = document.getElementById('fps-minimap');
+    if (!map) return;
+    map.style.display = fpsMapVisible ? 'block' : 'none';
+    if (!fpsMapVisible) return;
+    const ctx = map.getContext('2d');
+    if (!ctx) return;
+    const cell = Math.min(map.width / FPS_MAP[0].length, map.height / FPS_MAP.length);
+    ctx.clearRect(0, 0, map.width, map.height);
+    ctx.fillStyle = '#090b0e'; ctx.fillRect(0, 0, map.width, map.height);
+    FPS_MAP.forEach((row, y) => [...row].forEach((tile, x) => {
+        ctx.fillStyle = tile === '#' ? '#6d4a31' : '#211a16';
+        ctx.fillRect(x * cell, y * cell, cell - .5, cell - .5);
+    }));
+    FPS_TABLE_POSITIONS.slice(0, game.tablesOwned).forEach(table => {
+        ctx.fillStyle = '#d69e5e'; ctx.beginPath(); ctx.arc(table.x * cell, table.y * cell, 2.8, 0, Math.PI * 2); ctx.fill();
+    });
+    ctx.fillStyle = '#55efc4'; ctx.beginPath(); ctx.arc(fpsPlayer.x * cell, fpsPlayer.y * cell, 4, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = '#55efc4'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(fpsPlayer.x * cell, fpsPlayer.y * cell); ctx.lineTo((fpsPlayer.x + Math.cos(fpsPlayer.angle)) * cell, (fpsPlayer.y + Math.sin(fpsPlayer.angle)) * cell); ctx.stroke();
+    ctx.fillStyle = '#ffeaa7'; ctx.font = 'bold 9px sans-serif'; ctx.fillText('DINING FLOOR', 8, map.height - 8);
 }
 
 function drawFpsDecor(context, decor, canvasWidth, canvasHeight) {
@@ -1117,13 +1206,10 @@ function renderFpsScene(timestamp = 0) {
     const height = window.innerHeight;
     const context = fpsContext;
     const night = game.nightMode;
-    const horizon = height / 2 + fpsPlayer.pitch * height * 0.8;
-    context.fillStyle = night ? '#080d24' : '#80c7e8';
-    context.fillRect(0, 0, width, horizon);
-    context.fillStyle = night ? '#15131b' : '#5d4037';
-    context.fillRect(0, horizon, width, height - horizon);
-    context.fillStyle = night ? 'rgba(108,92,231,0.13)' : 'rgba(255,234,167,0.15)';
-    context.fillRect(0, horizon, width, height - horizon);
+    const cameraBob = Math.sin(fpsBob) * 5 * fpsMoveBlend;
+    const crouchOffset = fpsCrouched ? height * 0.09 : 0;
+    const horizon = height / 2 + fpsPlayer.pitch * height * 0.8 - crouchOffset + cameraBob;
+    drawFpsAtmosphere(context, width, height, horizon, timestamp);
 
     const rayStep = 2;
     for (let column = 0; column < width; column += rayStep) {
@@ -1138,7 +1224,7 @@ function renderFpsScene(timestamp = 0) {
         const hitX = fpsPlayer.x + Math.cos(rayAngle) * distance;
         const hitY = fpsPlayer.y + Math.sin(rayAngle) * distance;
         const wallTile = FPS_MAP[Math.floor(hitY)]?.[Math.floor(hitX)] || '#';
-        const shade = Math.max(35, Math.min(190, 185 - corrected * 10));
+        const shade = Math.max(30, Math.min(205, 195 - corrected * 11));
         const wallPalette = wallTile === '#' && Math.floor(hitY) === 0
             ? [shade * 0.72, shade * 0.58, shade * 0.42]
             : [shade, shade * 0.78, shade * 0.52];
@@ -1146,6 +1232,11 @@ function renderFpsScene(timestamp = 0) {
             ? `rgb(${wallPalette[0] * 0.32},${wallPalette[1] * 0.36},${Math.min(190, wallPalette[2] * 1.25)})`
             : `rgb(${wallPalette[0]},${wallPalette[1]},${wallPalette[2]})`;
         context.fillRect(column, horizon - wallHeight / 2, rayStep + 1, wallHeight);
+        const mortar = (Math.floor(hitX * 4) + Math.floor(hitY * 4)) % 5 === 0;
+        if (mortar) {
+            context.fillStyle = night ? 'rgba(0,0,0,.13)' : 'rgba(55,31,18,.11)';
+            context.fillRect(column, horizon - wallHeight / 2, rayStep + 1, wallHeight);
+        }
         if (Math.floor(hitX * 2) % 2 === 0 && corrected < 9) {
             context.fillStyle = night ? 'rgba(255,255,255,0.035)' : 'rgba(255,245,220,0.08)';
             context.fillRect(column, horizon - wallHeight / 2, 1, wallHeight);
@@ -1161,6 +1252,17 @@ function renderFpsScene(timestamp = 0) {
         .map((position, index) => ({ ...position, index, distance: Math.hypot(position.x - fpsPlayer.x, position.y - fpsPlayer.y) }))
         .sort((a, b) => b.distance - a.distance)
         .forEach(table => drawFpsTable(context, table, width, height));
+    const carried = getFpsCarryingCount();
+    if (carried) {
+        context.save();
+        context.translate(width * .72, height * .83 + Math.sin(fpsBob) * 4 * fpsMoveBlend);
+        context.fillStyle = '#f5f1e8'; context.beginPath(); context.ellipse(0, 0, 72, 25, -.08, 0, Math.PI * 2); context.fill();
+        context.fillStyle = '#8f3c26'; context.beginPath(); context.ellipse(0, -5, 58, 17, -.08, 0, Math.PI * 2); context.fill();
+        context.strokeStyle = '#e8d38a'; context.lineWidth = 3;
+        for (let i = -3; i <= 3; i++) { context.beginPath(); context.moveTo(-45, -8 + i * 3); context.quadraticCurveTo(0, -18 + i * 2, 45, -6 + i * 3); context.stroke(); }
+        context.restore();
+    }
+    drawFpsMinimap();
 
     const target = getFpsTargetTable();
     const objectTarget = getFpsTargetObject();
@@ -1187,7 +1289,8 @@ function bindFirstPersonControls() {
         if (!fpsOpen) return;
         const key = event.key.toLowerCase();
         if (key === 'escape') {
-            closeFirstPerson();
+            if (document.pointerLockElement === fpsCanvas) document.exitPointerLock();
+            else closeFirstPerson();
             return;
         }
         if (['w', 'a', 's', 'd', 'arrowup', 'arrowdown', 'arrowleft', 'arrowright', 'shift'].includes(key)) {
@@ -1200,6 +1303,20 @@ function bindFirstPersonControls() {
             else closeFpsUpgradePanel();
             event.preventDefault();
         }
+        if (key === 'c' && !event.repeat) {
+            fpsCrouched = !fpsCrouched;
+            document.getElementById('fps-overlay')?.classList.toggle('fps-crouched', fpsCrouched);
+            event.preventDefault();
+        }
+        if (key === 'f' && !event.repeat) {
+            fpsFlashlight = !fpsFlashlight;
+            document.getElementById('fps-flashlight-beam')?.classList.toggle('hidden', !fpsFlashlight);
+            event.preventDefault();
+        }
+        if (key === 'm' && !event.repeat) {
+            fpsMapVisible = !fpsMapVisible;
+            event.preventDefault();
+        }
         if (key === 'e' && !event.repeat) {
             if (document.getElementById('fps-upgrade-panel')?.classList.contains('hidden') === false) return;
             interactWithFpsScene();
@@ -1209,6 +1326,7 @@ function bindFirstPersonControls() {
     document.addEventListener('keyup', event => {
         if (fpsOpen) fpsKeys[event.key.toLowerCase()] = false;
     });
+    window.addEventListener('blur', () => { fpsKeys = {}; });
     document.addEventListener('mousemove', event => {
         if (fpsOpen && document.pointerLockElement === fpsCanvas) {
             fpsPlayer.angle += event.movementX * 0.0025;
@@ -1251,6 +1369,8 @@ function closeFirstPerson() {
     document.getElementById('fps-overlay')?.classList.add('hidden');
     document.body.classList.remove('first-person-open');
     fpsKeys = {};
+    fpsCrouched = false;
+    document.getElementById('fps-overlay')?.classList.remove('fps-crouched', 'fps-running');
     if (document.pointerLockElement === fpsCanvas) document.exitPointerLock();
     if (fpsAnimationFrame) cancelAnimationFrame(fpsAnimationFrame);
 }
@@ -1852,7 +1972,7 @@ function scheduleGoldenMonkey() {
     goldenMonkeyTimer = setTimeout(() => {
         spawnGoldenMonkey();
         scheduleGoldenMonkey();
-    }, 25000 + Math.random() * 25000);
+    }, 90000 + Math.random() * 90000);
 }
 
 function spawnGoldenMonkey() {
@@ -1865,19 +1985,18 @@ function spawnGoldenMonkey() {
     monkey.setAttribute('aria-label', 'Collect the golden monkey bonus');
     monkey.onclick = () => claimGoldenMonkey(monkey);
     document.body.appendChild(monkey);
-    setTimeout(() => monkey.remove(), 12000);
+    setTimeout(() => monkey.remove(), 6500);
 }
 
 function claimGoldenMonkey(monkey) {
     if (!monkey || !monkey.isConnected) return;
-    const reward = Math.max(250, game.currentMenuPrice * 20) * getPrestigeMultiplier();
+    const reward = Math.max(75, game.currentMenuPrice * 3) * Math.min(3, getPrestigeMultiplier());
     game.wallet += reward;
-    game.monkeyMoney++;
     game.eventsTriggered++;
-    window.vipPartyActive += 5;
+    window.vipPartyActive += 1;
     monkey.remove();
     showAchievementToast({ icon: '🌟', title: 'Golden Monkey Found!' });
-    spawnFloatingMoney(`+$${formatMoney(reward)} +1 MM`, 'money', '#f1c40f');
+    spawnFloatingMoney(`+$${formatMoney(reward)}`, 'money', '#f1c40f');
     checkAchievements();
     updateUI();
     saveGame();
