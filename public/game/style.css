@@ -819,7 +819,7 @@ body.first-person-open {
     inset: 0;
     z-index: 20000;
     overflow: hidden;
-    background: #111;
+    background: #0b0907;
     cursor: none;
 }
 
@@ -919,6 +919,46 @@ body.first-person-open {
     line-height: 29px;
     pointer-events: none;
 }
+
+.fps-crosshair::before,
+.fps-crosshair::after {
+    content: '';
+    position: absolute;
+    inset: 50% auto auto 50%;
+    width: 2px;
+    height: 2px;
+    transform: translate(-50%, -50%);
+    border-radius: 50%;
+    background: #fff;
+    box-shadow: 0 0 7px rgba(255,234,167,.9);
+}
+
+#fps-minimap {
+    position: absolute;
+    top: 86px;
+    right: 24px;
+    width: 190px;
+    height: 124px;
+    border: 1px solid rgba(255,234,167,.34);
+    border-radius: 7px;
+    background: rgba(7,10,13,.84);
+    box-shadow: 0 12px 32px rgba(0,0,0,.42);
+    pointer-events: none;
+}
+
+.fps-vitals { display:flex; align-items:center; justify-content:center; gap:8px; margin:4px auto; color:rgba(255,255,255,.72); font-size:.62rem; font-weight:900; letter-spacing:.08em; }
+.fps-vitals i { width:120px; height:6px; overflow:hidden; border:1px solid rgba(255,255,255,.26); background:rgba(0,0,0,.5); }
+.fps-vitals i b { display:block; width:100%; height:100%; background:linear-gradient(90deg,#e17055,#ffeaa7); transition:width .1s linear; }
+.fps-flashlight-beam { position:absolute; inset:0; pointer-events:none; background:radial-gradient(circle at 50% 50%, rgba(255,248,218,.19) 0, rgba(255,248,218,.1) 19%, transparent 46%); mix-blend-mode:screen; }
+.fps-vignette { position:absolute; inset:0; pointer-events:none; box-shadow:inset 0 0 150px 42px rgba(3,4,5,.66); }
+.fps-hands { position:absolute; left:50%; bottom:-28px; width:min(560px,60vw); height:155px; transform:translateX(-50%); pointer-events:none; filter:drop-shadow(0 20px 12px rgba(0,0,0,.45)); }
+.fps-hands span { position:absolute; bottom:0; width:34%; height:120px; border-radius:55% 55% 14% 14%; background:linear-gradient(160deg,#f1c27d,#a9683f 72%); border:8px solid #17110d; }
+.fps-hands span:first-child { left:4%; transform:rotate(20deg); }
+.fps-hands span:last-child { right:4%; transform:rotate(-20deg); }
+
+#fps-overlay.fps-crouched .fps-hands { bottom:-46px; }
+#fps-overlay.fps-running .fps-hands { animation:fpsHandsBob .34s ease-in-out infinite alternate; }
+@keyframes fpsHandsBob { to { transform:translateX(-50%) translateY(11px) rotate(.8deg); } }
 
 .fps-hud {
     position: absolute;

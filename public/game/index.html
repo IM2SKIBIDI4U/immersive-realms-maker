@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Ramen Tycoon: Monkey Bussiness</title>
+    <title>Ramen Monkey Tycoon</title>
     <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🍜</text></svg>">
     <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;700;900&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="style.css">
@@ -188,8 +188,13 @@
             <div class="fps-objective">Walk to a table and press <b>E</b></div>
             <div class="fps-status" id="fps-status">Loading restaurant...</div>
             <div class="fps-economy" id="fps-economy">Cash $150 · Orders 0/1 · Carrying 0/1</div>
-            <div class="fps-controls">Click the scene to capture mouse · WASD to move · Mouse to look up/down/left/right · ↑ ↓ ← → to look · E to interact · Shift to sprint · Esc to exit</div>
+            <div class="fps-vitals"><span>STAMINA</span><i><b id="fps-stamina-bar"></b></i><span id="fps-stance">STANDING</span></div>
+            <div class="fps-controls">WASD MOVE · MOUSE LOOK · E USE · SHIFT SPRINT · C CROUCH · F FLASHLIGHT · M MAP · U UPGRADES · ESC RELEASE MOUSE</div>
         </div>
+        <canvas id="fps-minimap" width="190" height="124" aria-label="Restaurant minimap"></canvas>
+        <div id="fps-flashlight-beam" class="fps-flashlight-beam hidden"></div>
+        <div class="fps-hands" aria-hidden="true"><span></span><span></span></div>
+        <div class="fps-vignette" aria-hidden="true"></div>
         <div id="fps-upgrade-panel" class="fps-upgrade-panel hidden">
             <div class="fps-panel-card">
                 <button class="fps-panel-close" onclick="closeFpsUpgradePanel()">✕</button>
