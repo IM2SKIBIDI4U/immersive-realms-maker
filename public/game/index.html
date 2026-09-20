@@ -156,24 +156,6 @@
         </div>
     </div>
 
-    <div id="admin-panel" class="hidden">
-        <h2 class="matrix-text">👑 GOD MODE TERMINAL</h2>
-        <div style="margin-bottom: 15px;">
-            <input type="number" id="custom-money" placeholder="Enter custom amount..." style="padding: 10px; border-radius: 5px; border:none; width: 60%;">
-            <button class="god-btn" onclick="setCustomMoney()">Set Money</button>
-        </div>
-        <div class="admin-grid">
-            <button class="god-btn" onclick="cheatMoney(1e15)">+1 Quadrillion</button>
-            <button onclick="adminMaxEverything()" style="background: #e74c3c; color: white; padding: 10px; border: none; font-weight: bold; cursor: pointer; border-radius: 5px; margin: 5px;">👑 MAX OUT EVERYTHING</button>
-            <button class="god-btn" onclick="adminMaxIngredients()">Infinite Ingredients</button>
-            <button class="god-btn" onclick="cheatStars()">+1 Monkey Money</button>
-            <button class="god-btn" onclick="triggerEvent('rush')">Force Rush Hour</button>
-            <button class="god-btn" onclick="triggerEvent('health')">Force Health Inspector</button>
-            <button class="god-btn" style="color: #e74c3c; border-color: #e74c3c;" onclick="nukeRivals()">Nuke All Rivals</button>
-        </div>
-        <button class="reset-btn matrix-text" style="color: #ff4d4d; margin-top: 15px;" onclick="document.getElementById('admin-panel').classList.add('hidden')">[ CLOSE TERMINAL ]</button>
-    </div>
-
     <div id="fps-overlay" class="hidden" aria-label="First person restaurant mode">
         <canvas id="fps-canvas"></canvas>
         <div class="fps-topbar">
@@ -193,7 +175,6 @@
         </div>
         <canvas id="fps-minimap" width="190" height="124" aria-label="Restaurant minimap"></canvas>
         <div id="fps-flashlight-beam" class="fps-flashlight-beam hidden"></div>
-        <div class="fps-hands" aria-hidden="true"><span></span><span></span></div>
         <div class="fps-vignette" aria-hidden="true"></div>
         <div id="fps-upgrade-panel" class="fps-upgrade-panel hidden">
             <div class="fps-panel-card">
@@ -206,7 +187,7 @@
         </div>
     </div>
 
-    <script src="script.js?v=8"></script>
+    <script src="script.js?v=9"></script>
     <div id="achieve-toast" class="hidden-toast">
     🏆 <b id="achieve-name">Achievement Unlocked!</b>
     </div>

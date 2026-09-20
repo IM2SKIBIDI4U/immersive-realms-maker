@@ -107,6 +107,11 @@ const INITIAL_RIVALS = [
 ];
 
 const defaultInv = { noodle: 10, broth: 10, spice: 10, egg: 10, boba: 10 };
+const SAVE_KEY = 'RamenUltimateData';
+const SAVE_BACKUP_KEY = 'RamenUltimateBackup';
+const SAVE_VERSION = 2;
+const SAVE_SALT = 'rm-fair-kitchen-2026';
+const MAX_OFFLINE_MS = 12 * 60 * 60 * 1000;
 let game = {
     wallet: 150, monkeyMoney: 0, turfMult: 1, lastSaveTime: Date.now(),
     tablesOwned: 1, idxTable: 0, idxRecipe: 0, idxWok: 0, idxAuto: 0, idxSpecial: 0, currentMenuPrice: 50,
@@ -247,6 +252,19 @@ function normalizeGameState() {
         game[key] = Number.isFinite(game[key]) ? game[key] : 0;
     });
     if (!Array.isArray(game.missions) || game.missions.length !== 3) game.missions = createMissionSet();
+    game.wallet = Math.max(0, Math.min(1e100, game.wallet));
+    game.monkeyMoney = Math.max(0, Math.min(50000, Math.floor(game.monkeyMoney)));
+    game.turfMult = Math.max(1, Math.min(100, game.turfMult));
+    game.tablesOwned = Math.max(1, Math.min(1000, Math.floor(game.tablesOwned)));
+    ['idxTable', 'idxRecipe', 'idxWok', 'idxAuto', 'idxAds'].forEach((key) => {
+        game[key] = Math.max(0, Math.min(999, Math.floor(game[key])));
+    });
+    Object.keys(game.inv).forEach((key) => {
+        game.inv[key] = Math.max(0, Math.min(1e12, Math.floor(Number(game.inv[key]) || 0)));
+    });
+    Object.keys(game.staff).forEach((key) => {
+        game.staff[key] = Math.max(0, Math.min(1000, Math.floor(Number(game.staff[key]) || 0)));
+    });
 }
 
 function getRestaurantLevel() {
