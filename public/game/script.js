@@ -2028,28 +2028,6 @@ function triggerEvent(type) {
     }
 }
 
-function nukeRivals() {
-    if (!confirm('Defeat every rival and claim all remaining turf bonuses?')) return;
-
-    let bonus = 0;
-    game.rivals.forEach(rival => {
-        if (rival.hp > 0) {
-            rival.hp = 0;
-            bonus += rival.multReward;
-        }
-    });
-    game.turfMult += bonus;
-    playSound('cash');
-    saveGame();
-    updateUI();
-    renderTurfPanel();
-}
-
-function closeAdmin() {
-    const adminPanel = document.getElementById('admin-panel');
-    if (adminPanel) adminPanel.classList.add('hidden');
-}
-
 let goldenMonkeyTimer;
 function scheduleGoldenMonkey() {
     clearTimeout(goldenMonkeyTimer);
@@ -2086,56 +2064,96 @@ function claimGoldenMonkey(monkey) {
     saveGame();
 }
 
-let typed = ""; document.addEventListener('keydown', (e) => { typed += e.key.toLowerCase(); if (typed.endsWith("idk")) { let ap = document.getElementById('admin-panel'); if(ap) ap.classList.remove('hidden'); typed = ""; } if (typed.length > 20) typed = typed.slice(-20); });
-function cheatMoney(amt) { game.wallet += amt; saveGame(); updateUI(); }
-function setCustomMoney() { let val = parseFloat(document.getElementById('custom-money').value); if(!isNaN(val)) { game.wallet = val; saveGame(); updateUI(); } }
-function adminMaxIngredients() { game.inv.noodle=1e15; game.inv.broth=1e15; game.inv.spice=1e15; game.inv.egg=1e15; game.inv.boba=1e15; if(document.getElementById('out-of-stock-msg')) document.getElementById('out-of-stock-msg').classList.add('hidden'); saveGame(); updateUI(); }
-function cheatStars() { game.monkeyMoney++; saveGame(); updateUI(); }
+function hashSavePayload(payload) {
+    let hash = 2166136261;
+    const source = `${SAVE_SALT}|${payload}|${SAVE_VERSION}`;
+    for (let index = 0; index < source.length; index++) {
+        hash ^= source.charCodeAt(index);
+        hash = Math.imul(hash, 16777619);
+    }
+    return (hash >>> 0).toString(36);
+}
 
-function adminMaxEverything() {
-    game.wallet = 1e50; 
-    game.monkeyMoney = 1e9;
-    game.tablesOwned = 1000; 
-    game.idxTable = 999;
-    game.idxRecipe = 999; 
-    game.idxWok = 999;
-    game.idxAuto = 999;
-    game.idxAds = 999;
-    adminMaxIngredients();
-    saveGame();
-    updateUI();
-    location.reload();
+function createSaveEnvelope() {
+    const payload = JSON.stringify(game);
+    return JSON.stringify({ version: SAVE_VERSION, payload, checksum: hashSavePayload(payload) });
+}
+
+function readSaveEnvelope(raw) {
+    if (!raw) return null;
+    const envelope = JSON.parse(raw);
+    if (envelope && envelope.version === SAVE_VERSION && typeof envelope.payload === 'string') {
+        if (envelope.checksum !== hashSavePayload(envelope.payload)) throw new Error('Save checksum mismatch');
+        return JSON.parse(envelope.payload);
+    }
+    // Import older saves once, then immediately rewrite them in protected form.
+    if (envelope && typeof envelope === 'object' && Number.isFinite(envelope.wallet)) return envelope;
+    throw new Error('Unsupported save format');
+}
+
+function isPlausibleSave(candidate) {
+    if (!candidate || typeof candidate !== 'object') return false;
+    const finiteKeys = ['wallet', 'monkeyMoney', 'turfMult', 'tablesOwned', 'idxTable', 'idxRecipe', 'idxWok', 'idxAuto', 'idxAds', 'lastSaveTime'];
+    if (!finiteKeys.every(key => Number.isFinite(candidate[key]))) return false;
+    if (candidate.wallet < 0 || candidate.wallet > 1e100) return false;
+    if (candidate.monkeyMoney < 0 || candidate.monkeyMoney > 50000) return false;
+    if (candidate.tablesOwned < 1 || candidate.tablesOwned > 1000) return false;
+    if (candidate.idxTable < 0 || candidate.idxTable > 999 || candidate.tablesOwned > candidate.idxTable + 1) return false;
+    if ([candidate.idxRecipe, candidate.idxWok, candidate.idxAuto, candidate.idxAds].some(value => value < 0 || value > 999)) return false;
+    if (candidate.lastSaveTime > Date.now() + 5 * 60 * 1000) return false;
+    return true;
 }
 
 function saveGame() {
+    normalizeGameState();
     game.lastSaveTime = Date.now();
-    localStorage.setItem('RamenUltimateData', JSON.stringify(game));
+    const current = localStorage.getItem(SAVE_KEY);
+    if (current) {
+        try {
+            const previous = readSaveEnvelope(current);
+            if (isPlausibleSave(previous)) localStorage.setItem(SAVE_BACKUP_KEY, current);
+        } catch (_) {
+            // Never preserve a modified save as the trusted backup.
+        }
+    }
+    localStorage.setItem(SAVE_KEY, createSaveEnvelope());
 }
 
 function loadGame() {
-    let saved = localStorage.getItem('RamenUltimateData');
-    if (saved) {
+    const primary = localStorage.getItem(SAVE_KEY);
+    const backup = localStorage.getItem(SAVE_BACKUP_KEY);
+    let loaded = null;
+    let recovered = false;
+    for (const raw of [primary, backup]) {
+        if (!raw || loaded) continue;
         try {
-            let parsed = JSON.parse(saved);
-            game = Object.assign(game, parsed);
+            const candidate = readSaveEnvelope(raw);
+            if (!isPlausibleSave(candidate)) throw new Error('Impossible progress values');
+            loaded = candidate;
+            recovered = raw === backup;
         } catch (error) {
-            localStorage.removeItem('RamenUltimateData');
-            console.warn('Saved game was invalid. Starting a fresh restaurant.', error);
+            console.warn('Rejected modified or invalid restaurant progress.', error.message);
         }
-
-        let now = Date.now();
-        let timeDiff = now - (game.lastSaveTime || now);
-        let secondsAway = Math.floor(timeDiff / 1000);
-
+    }
+    if (loaded) {
+        game = Object.assign(game, loaded);
+        const now = Date.now();
+        const timeDiff = Math.max(0, Math.min(MAX_OFFLINE_MS, now - (game.lastSaveTime || now)));
+        const secondsAway = Math.floor(timeDiff / 1000);
         if (secondsAway > 60) {
             if(document.getElementById('offline-earned')) document.getElementById('offline-earned').innerText = "0";
             if(document.getElementById('offline-time')) document.getElementById('offline-time').innerText = `${Math.floor(secondsAway/60)} Minutes`;
             if(document.getElementById('offline-modal')) document.getElementById('offline-modal').classList.remove('hidden');
         }
         game.lastSaveTime = now;
+    } else if (primary || backup) {
+        localStorage.removeItem(SAVE_KEY);
+        localStorage.removeItem(SAVE_BACKUP_KEY);
+        setTimeout(() => showAchievementToast({ icon: '🛡️', title: 'Modified save rejected' }), 300);
     }
     normalizeGameState();
     resetMissionsIfNeeded();
+    if (loaded && (recovered || !primary?.includes(`\"version\":${SAVE_VERSION}`))) saveGame();
 }
 
 function closeOfflineModal() {
