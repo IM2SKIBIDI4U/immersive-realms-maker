@@ -464,6 +464,11 @@ let fpsFlashlight = false;
 let fpsMapVisible = true;
 let fpsBob = 0;
 let fpsMoveBlend = 0;
+let fpsCameraOffset = 0;
+
+function getFpsHorizon(canvasHeight) {
+    return canvasHeight / 2 + fpsPlayer.pitch * canvasHeight * 0.8 + fpsCameraOffset;
+}
 
 function normalizeFpsAngle(angle) {
     while (angle > Math.PI) angle -= Math.PI * 2;
@@ -927,7 +932,7 @@ function drawFpsDecor(context, decor, canvasWidth, canvasHeight) {
     if (distance > FPS_RENDER_DISTANCE || Math.abs(relative) > FPS_FOV / 2 + 0.2 || !hasFpsLineOfSight(decor)) return;
     const screenX = canvasWidth / 2 + (relative / FPS_FOV) * canvasWidth;
     const size = Math.min(canvasHeight * 0.32, 130 / Math.max(0.5, distance));
-    const horizon = canvasHeight / 2 + fpsPlayer.pitch * canvasHeight * 0.8;
+    const horizon = getFpsHorizon(canvasHeight);
     const centerY = horizon - canvasHeight * 0.16;
     context.save();
      context.globalAlpha = Math.max(0.78, 1 - distance / 28);
@@ -1025,7 +1030,7 @@ function getFpsProjection(point, canvasWidth, canvasHeight) {
     const distance = Math.max(0.35, Math.hypot(dx, dy));
     const relative = normalizeFpsAngle(Math.atan2(dy, dx) - fpsPlayer.angle);
     if (distance > FPS_RENDER_DISTANCE || Math.abs(relative) > FPS_FOV / 2 + 0.2 || !hasFpsLineOfSight(point)) return null;
-    const horizon = canvasHeight / 2 + fpsPlayer.pitch * canvasHeight * 0.8;
+    const horizon = getFpsHorizon(canvasHeight);
     return {
         distance,
         relative,
@@ -1116,7 +1121,7 @@ function drawFpsTable(context, table, canvasWidth, canvasHeight) {
     let tableHeight = Math.min(canvasHeight * 0.55, 175 / Math.max(0.4, distance));
     if (table.design === 'low') tableHeight *= 0.72;
     const tableWidth = tableHeight * (table.design === 'booth' ? 1.7 : table.design === 'barrel' ? 0.95 : 1.25);
-    const horizon = canvasHeight / 2 + fpsPlayer.pitch * canvasHeight * 0.8;
+    const horizon = getFpsHorizon(canvasHeight);
     const floorY = horizon + canvasHeight * 0.23 + Math.min(40, distance * 3);
     const seat = seats[table.index];
     const isTarget = getFpsTargetTable()?.index === table.index;
@@ -1208,7 +1213,9 @@ function renderFpsScene(timestamp = 0) {
     const night = game.nightMode;
     const cameraBob = Math.sin(fpsBob) * 5 * fpsMoveBlend;
     const crouchOffset = fpsCrouched ? height * 0.09 : 0;
-    const horizon = height / 2 + fpsPlayer.pitch * height * 0.8 - crouchOffset + cameraBob;
+    fpsCameraOffset = -crouchOffset + cameraBob;
+    const horizon = getFpsHorizon(height);
+    document.getElementById('fps-overlay')?.classList.toggle('fps-running', Boolean((fpsKeys.w || fpsKeys.a || fpsKeys.s || fpsKeys.d) && fpsKeys.shift && fpsStamina > 0));
     drawFpsAtmosphere(context, width, height, horizon, timestamp);
 
     const rayStep = 2;
