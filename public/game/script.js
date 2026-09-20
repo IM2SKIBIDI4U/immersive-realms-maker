@@ -1037,7 +1037,7 @@ function getFpsProjection(point, canvasWidth, canvasHeight) {
         screenX: canvasWidth / 2 + (relative / FPS_FOV) * canvasWidth,
         horizon,
         floorY: horizon + canvasHeight * 0.23 + Math.min(45, distance * 3),
-        size: Math.min(canvasHeight * 0.5, 180 / distance)
+        size: Math.min(canvasHeight * 0.38, 140 / distance)
     };
 }
 
@@ -1118,7 +1118,7 @@ function drawFpsTable(context, table, canvasWidth, canvasHeight) {
     const relative = normalizeFpsAngle(Math.atan2(dy, dx) - fpsPlayer.angle);
     if (distance > FPS_RENDER_DISTANCE || Math.abs(relative) > FPS_FOV / 2 + 0.15 || !hasFpsLineOfSight(table)) return;
     const screenX = canvasWidth / 2 + (relative / FPS_FOV) * canvasWidth;
-    let tableHeight = Math.min(canvasHeight * 0.55, 175 / Math.max(0.4, distance));
+    let tableHeight = Math.min(canvasHeight * 0.42, 132 / Math.max(0.4, distance));
     if (table.design === 'low') tableHeight *= 0.72;
     const tableWidth = tableHeight * (table.design === 'booth' ? 1.7 : table.design === 'barrel' ? 0.95 : 1.25);
     const horizon = getFpsHorizon(canvasHeight);
