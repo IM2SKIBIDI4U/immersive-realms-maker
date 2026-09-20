@@ -896,6 +896,35 @@ function drawFpsAtmosphere(context, width, height, horizon, timestamp) {
     context.fillStyle = floor;
     context.fillRect(0, horizon, width, height - horizon);
     context.save();
+    const ceilingDepth = Math.max(24, horizon * 0.14);
+    context.fillStyle = game.nightMode ? 'rgba(90,73,117,.16)' : 'rgba(119,72,38,.22)';
+    for (let beam = -1; beam <= 5; beam++) {
+        const x = beam * width * 0.24 + ((fpsPlayer.angle / (Math.PI * 2)) * width * 0.2);
+        context.beginPath();
+        context.moveTo(width / 2 + (x - width / 2) * 0.2, horizon * 0.07);
+        context.lineTo(width / 2 + (x - width / 2) * 0.5, ceilingDepth);
+        context.lineTo(width / 2 + (x + width * 0.08 - width / 2) * 0.5, ceilingDepth);
+        context.lineTo(width / 2 + (x + width * 0.08 - width / 2) * 0.2, horizon * 0.07);
+        context.closePath();
+        context.fill();
+    }
+    const lampY = Math.max(42, horizon * 0.19);
+    [0.24, 0.5, 0.76].forEach((position, index) => {
+        const sway = Math.sin(timestamp / 1800 + index) * 2;
+        const lampX = width * position + sway;
+        const pool = context.createRadialGradient(lampX, lampY + 22, 2, lampX, lampY + 22, width * 0.17);
+        pool.addColorStop(0, game.nightMode ? 'rgba(179,151,255,.2)' : 'rgba(255,219,159,.3)');
+        pool.addColorStop(1, 'rgba(0,0,0,0)');
+        context.fillStyle = pool;
+        context.fillRect(lampX - width * .18, lampY, width * .36, horizon * .8);
+        context.strokeStyle = 'rgba(35,22,14,.85)';
+        context.lineWidth = 3;
+        context.beginPath(); context.moveTo(lampX, 0); context.lineTo(lampX, lampY); context.stroke();
+        context.fillStyle = game.nightMode ? '#9d85d8' : '#f2b75d';
+        context.beginPath(); context.ellipse(lampX, lampY, 17, 8, 0, 0, Math.PI * 2); context.fill();
+    });
+    context.restore();
+    context.save();
     context.globalAlpha = game.nightMode ? 0.13 : 0.2;
     context.strokeStyle = game.nightMode ? '#6c5ce7' : '#d7ad74';
     context.lineWidth = 1;
@@ -905,6 +934,17 @@ function drawFpsAtmosphere(context, width, height, horizon, timestamp) {
     }
     for (let x = -width; x < width * 2; x += 90) {
         context.beginPath(); context.moveTo(width / 2, horizon); context.lineTo(x + drift, height); context.stroke();
+    }
+    context.restore();
+    context.save();
+    context.globalAlpha = game.nightMode ? 0.09 : 0.13;
+    context.fillStyle = '#0e0805';
+    for (let row = 0, y = horizon + 22; y < height; row++, y += Math.max(22, (y - horizon) * .2)) {
+        const tileHeight = Math.max(1, (y - horizon) * .025);
+        context.fillRect(0, y, width, tileHeight);
+        const spacing = Math.max(42, (y - horizon) * .42);
+        const offset = row % 2 ? spacing / 2 : 0;
+        for (let x = -spacing + offset; x < width + spacing; x += spacing) context.fillRect(x, y, 1, Math.max(4, tileHeight * 5));
     }
     context.restore();
     const glow = context.createRadialGradient(width * 0.5, horizon * 0.24, 10, width * 0.5, horizon * 0.24, width * 0.48);
@@ -918,6 +958,24 @@ function drawFpsAtmosphere(context, width, height, horizon, timestamp) {
         const y = (i * 97) % Math.max(1, horizon);
         context.fillRect(x, y, 1.5, 1.5);
     }
+}
+
+function drawFpsFinish(context, width, height, horizon, timestamp) {
+    const lowerLight = context.createRadialGradient(width * .5, horizon + height * .12, 8, width * .5, horizon + height * .12, width * .62);
+    lowerLight.addColorStop(0, game.nightMode ? 'rgba(99,82,145,.055)' : 'rgba(255,202,126,.075)');
+    lowerLight.addColorStop(1, 'rgba(0,0,0,0)');
+    context.fillStyle = lowerLight;
+    context.fillRect(0, horizon, width, height - horizon);
+    context.save();
+    context.globalAlpha = .035;
+    context.fillStyle = '#fff4da';
+    const seed = Math.floor(timestamp / 90);
+    for (let i = 0; i < 90; i++) {
+        const x = (i * 137 + seed * 29) % width;
+        const y = (i * 83 + seed * 17) % height;
+        context.fillRect(x, y, 1, 1);
+    }
+    context.restore();
 }
 
 function drawFpsMinimap() {
@@ -1277,6 +1335,7 @@ function renderFpsScene(timestamp = 0) {
         .map((position, index) => ({ ...position, index, distance: Math.hypot(position.x - fpsPlayer.x, position.y - fpsPlayer.y) }))
         .sort((a, b) => b.distance - a.distance)
         .forEach(table => drawFpsTable(context, table, width, height));
+    drawFpsFinish(context, width, height, horizon, timestamp);
     const carried = getFpsCarryingCount();
     if (carried) {
         context.save();
