@@ -95,7 +95,9 @@ const TRACK_DECOR = [ { id: 'theme-default', name: 'Standard Store', cost: 0 }, 
 const TRACK_STAFF = [
     { id: 'waiter', name: 'Waiter Chimp (Auto Serve/Pay)', baseCost: 50000, mult: 5 },
     { id: 'ninja', name: 'Ninja Macaque (Insta-Cook Chance)', baseCost: 250000, mult: 10 },
-    { id: 'mascot', name: 'Capuchin Mascot (+Patience/Tips)', baseCost: 1000000, mult: 15 }
+    { id: 'mascot', name: 'Capuchin Mascot (+Patience/Tips)', baseCost: 1000000, mult: 15 },
+    { id: 'linecook', name: 'Line Cook Baboon (Faster FPS Cooking)', baseCost: 2500000, mult: 12 },
+    { id: 'manager', name: 'Orangutan Manager (+Shift Tips)', baseCost: 10000000, mult: 18 }
 ];
 
 const INITIAL_RIVALS = [
@@ -221,10 +223,10 @@ function normalizeGameState() {
     game.autoRefill = Boolean(game.autoRefill);
     game.nightMode = Boolean(game.nightMode);
     game.popularity = Math.max(0, Math.min(100, game.popularity));
-    game.staffTraining = { waiter: 0, ninja: 0, mascot: 0, ...(game.staffTraining || {}) };
+    game.staffTraining = { waiter: 0, ninja: 0, mascot: 0, linecook: 0, manager: 0, ...(game.staffTraining || {}) };
     game.reviews = Array.isArray(game.reviews) ? game.reviews.slice(0, 6) : [];
     game.physical = {
-        capacity: 1, speedLevel: 0, cookingLevel: 0, interactionLevel: 0,
+        capacity: 1, speedLevel: 0, cookingLevel: 0, interactionLevel: 0, trayLevel: 0, efficiencyLevel: 0,
         ingredientsReadyFor: null, activeOrder: null, carriedFood: [],
         ...(game.physical || {})
     };
@@ -232,6 +234,8 @@ function normalizeGameState() {
     game.physical.speedLevel = Math.max(0, Number(game.physical.speedLevel) || 0);
     game.physical.cookingLevel = Math.max(0, Number(game.physical.cookingLevel) || 0);
     game.physical.interactionLevel = Math.max(0, Number(game.physical.interactionLevel) || 0);
+    game.physical.trayLevel = Math.max(0, Math.min(5, Math.floor(Number(game.physical.trayLevel) || 0)));
+    game.physical.efficiencyLevel = Math.max(0, Math.min(10, Math.floor(Number(game.physical.efficiencyLevel) || 0)));
     game.physical.carriedFood = Array.isArray(game.physical.carriedFood) ? game.physical.carriedFood : [];
     // Seats and active orders are runtime-only; never restore a half-finished shift.
     game.physical.activeOrder = null;
@@ -241,18 +245,19 @@ function normalizeGameState() {
         game.deliveryActive = null;
     }
     game.inv = { ...defaultInv, ...(game.inv || {}) };
-    game.staff = { waiter: 0, ninja: 0, mascot: 0, ...(game.staff || {}) };
+    game.staff = { waiter: 0, ninja: 0, mascot: 0, linecook: 0, manager: 0, ...(game.staff || {}) };
     game.rivals = Array.isArray(game.rivals) && game.rivals.length ? game.rivals : JSON.parse(JSON.stringify(INITIAL_RIVALS));
     game.decorOwned = Array.isArray(game.decorOwned) && game.decorOwned.length ? game.decorOwned : ['theme-default'];
     game.achievements = Array.isArray(game.achievements) ? game.achievements : [];
     game.missionCycle = Number.isFinite(game.missionCycle) ? game.missionCycle : 0;
     game.missionStreak = Number.isFinite(game.missionStreak) ? game.missionStreak : 0;
     game.lastMissionReset = Number.isFinite(game.lastMissionReset) ? game.lastMissionReset : Date.now();
-    ['servedCount', 'totalEarned', 'vipServed', 'combo', 'bestCombo', 'rivalsDefeated', 'eventsTriggered'].forEach((key) => {
+    ['servedCount', 'totalEarned', 'vipServed', 'combo', 'bestCombo', 'rivalsDefeated', 'eventsTriggered', 'lifetimeSpent', 'shiftServed', 'bestShift', 'shiftsCompleted'].forEach((key) => {
         game[key] = Number.isFinite(game[key]) ? game[key] : 0;
     });
     if (!Array.isArray(game.missions) || game.missions.length !== 3) game.missions = createMissionSet();
     game.wallet = Math.max(0, Math.min(1e100, game.wallet));
+    game.sandboxMode = Boolean(game.sandboxMode);
     game.monkeyMoney = Math.max(0, Math.min(50000, Math.floor(game.monkeyMoney)));
     game.turfMult = Math.max(1, Math.min(100, game.turfMult));
     game.tablesOwned = Math.max(1, Math.min(1000, Math.floor(game.tablesOwned)));
@@ -483,6 +488,7 @@ let fpsMapVisible = true;
 let fpsBob = 0;
 let fpsMoveBlend = 0;
 let fpsCameraOffset = 0;
+let fpsDepthBuffer = new Float32Array(0);
 
 function getFpsHorizon(canvasHeight) {
     return canvasHeight / 2 + fpsPlayer.pitch * canvasHeight * 0.8 + fpsCameraOffset;
@@ -522,6 +528,13 @@ function resizeFpsCanvas() {
     fpsCanvas.style.width = `${window.innerWidth}px`;
     fpsCanvas.style.height = `${window.innerHeight}px`;
     if (fpsContext) fpsContext.setTransform(scale, 0, 0, scale, 0, 0);
+    fpsDepthBuffer = new Float32Array(Math.max(1, window.innerWidth));
+}
+
+function isFpsSpriteOccluded(screenX, distance, width) {
+    const column = Math.max(0, Math.min(width - 1, Math.floor(screenX)));
+    const wallDistance = fpsDepthBuffer[column];
+    return Number.isFinite(wallDistance) && wallDistance + 0.18 < distance;
 }
 
 function getFpsTargetTable() {
@@ -808,7 +821,9 @@ function getFpsUpgradeDefinitions() {
         { type: 'capacity', title: 'Carry capacity', detail: `${physical.capacity}/4 bowls · carry more orders`, level: physical.capacity, max: 4, cost: 450 * Math.pow(2.2, physical.capacity - 1) },
         { type: 'speed', title: 'Walking speed', detail: `Level ${physical.speedLevel} · move faster between stations`, level: physical.speedLevel, max: 5, cost: 700 * Math.pow(2, physical.speedLevel) },
         { type: 'cooking', title: 'Cooking speed', detail: `Level ${physical.cookingLevel} · reduce station time`, level: physical.cookingLevel, max: 5, cost: 900 * Math.pow(2, physical.cookingLevel) },
-        { type: 'interaction', title: 'Service training', detail: `Level ${physical.interactionLevel} · wider interaction range`, level: physical.interactionLevel, max: 5, cost: 600 * Math.pow(2, physical.interactionLevel) }
+        { type: 'interaction', title: 'Service training', detail: `Level ${physical.interactionLevel} · wider interaction range`, level: physical.interactionLevel, max: 5, cost: 600 * Math.pow(2, physical.interactionLevel) },
+        { type: 'tray', title: 'Balanced tray', detail: `Level ${physical.trayLevel} · extra carry slots and group orders`, level: physical.trayLevel, max: 5, cost: 1800 * Math.pow(2.15, physical.trayLevel) },
+        { type: 'efficiency', title: 'Shift mastery', detail: `Level ${physical.efficiencyLevel} · +5% first-person tips`, level: physical.efficiencyLevel, max: 10, cost: 3200 * Math.pow(1.9, physical.efficiencyLevel) }
     ];
 }
 
@@ -842,6 +857,8 @@ function buyFpsUpgrade(type) {
     if (type === 'speed') game.physical.speedLevel++;
     if (type === 'cooking') game.physical.cookingLevel++;
     if (type === 'interaction') game.physical.interactionLevel++;
+    if (type === 'tray') { game.physical.trayLevel++; game.physical.capacity = Math.min(8, game.physical.capacity + 1); }
+    if (type === 'efficiency') game.physical.efficiencyLevel++;
     gainRestaurantXp(8);
     playSound('cash');
     renderFpsUpgradePanel();
