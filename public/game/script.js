@@ -1890,6 +1890,8 @@ function updateUI() {
     if(document.getElementById('stat-combo')) document.getElementById('stat-combo').innerText = game.combo;
     if(document.getElementById('stat-level')) document.getElementById('stat-level').innerText = getRestaurantLevel();
     if(document.getElementById('stat-popularity')) document.getElementById('stat-popularity').innerText = Math.round(game.popularity);
+    const saveStatus = document.getElementById('save-status');
+    if (saveStatus) saveStatus.innerText = game.sandboxMode ? 'SANDBOX' : 'FAIR';
     
     let currentRecipeName = (game.idxRecipe > 0 && TRACK_RECIPES[game.idxRecipe-1]) ? TRACK_RECIPES[game.idxRecipe-1].name : RAMEN_NAMES[0];
     if(document.getElementById('stat-menu')) document.getElementById('stat-menu').innerText = `${currentRecipeName} ($${formatMoney(game.currentMenuPrice)})`;
@@ -2039,7 +2041,8 @@ function prestigeGame() {
         let st = (game.monkeyMoney || 0) + 50; 
         let tm = game.turfMult; let d = game.decorOwned; let ad = game.activeDecor; let rv = game.rivals; let ach = game.achievements || [];
         localStorage.clear(); 
-        game = { wallet: 150, monkeyMoney: st, turfMult: tm, lastSaveTime: Date.now(), tablesOwned: 1, idxTable: 0, idxRecipe: 0, idxWok: 0, idxAuto: 0, idxAds: 0, idxSpecial: 0, currentMenuPrice: 50, activeDecor: ad, decorOwned: d, autoRefill: false, staff: {waiter:0,ninja:0,mascot:0}, rivals: rv, inv: {...defaultInv}, upgrades: {}, achievements: ach, autoChefSpeedMulti: 1 }; 
+        const sandboxMode = game.sandboxMode;
+        game = { wallet: 150, monkeyMoney: st, turfMult: tm, lastSaveTime: Date.now(), tablesOwned: 1, idxTable: 0, idxRecipe: 0, idxWok: 0, idxAuto: 0, idxAds: 0, idxSpecial: 0, currentMenuPrice: 50, activeDecor: ad, decorOwned: d, autoRefill: false, staff: {waiter:0,ninja:0,mascot:0,linecook:0,manager:0}, rivals: rv, inv: {...defaultInv}, upgrades: {}, achievements: ach, autoChefSpeedMulti: 1, sandboxMode }; 
         saveGame(); location.reload(); 
     } else if (game.idxRecipe < 999) {
         alert("You must unlock Universal Ramen (Level 1000) before you can franchise!");
