@@ -292,6 +292,14 @@ function gainRestaurantXp(amount) {
     }
 }
 
+function spendCash(amount) {
+    const value = Math.max(0, Number(amount) || 0);
+    if (game.wallet < value) return false;
+    game.wallet -= value;
+    game.lifetimeSpent = (game.lifetimeSpent || 0) + value;
+    return true;
+}
+
 function rotateDailySpecialIfNeeded() {
     if (Date.now() < game.specialEndsAt) return;
     game.dailySpecialIndex = (game.dailySpecialIndex + 1) % DAILY_SPECIALS.length;
@@ -1030,6 +1038,7 @@ function drawFpsDecor(context, decor, canvasWidth, canvasHeight) {
     const relative = normalizeFpsAngle(Math.atan2(dy, dx) - fpsPlayer.angle);
     if (distance > FPS_RENDER_DISTANCE || Math.abs(relative) > FPS_FOV / 2 + 0.2 || !hasFpsLineOfSight(decor)) return;
     const screenX = canvasWidth / 2 + (relative / FPS_FOV) * canvasWidth;
+    if (isFpsSpriteOccluded(screenX, distance, canvasWidth)) return;
     const size = Math.min(canvasHeight * 0.32, 130 / Math.max(0.5, distance));
     const horizon = getFpsHorizon(canvasHeight);
     const centerY = horizon - canvasHeight * 0.16;
@@ -1144,6 +1153,7 @@ function drawFpsWorldObject(context, object, canvasWidth, canvasHeight) {
     const projection = getFpsProjection(object, canvasWidth, canvasHeight);
     if (!projection) return;
     const { screenX, horizon, floorY, size, distance } = projection;
+    if (isFpsSpriteOccluded(screenX, distance, canvasWidth)) return;
     const target = getFpsTargetObject();
     const isTarget = target && target.kind === object.kind;
     context.save();
@@ -1217,6 +1227,7 @@ function drawFpsTable(context, table, canvasWidth, canvasHeight) {
     const relative = normalizeFpsAngle(Math.atan2(dy, dx) - fpsPlayer.angle);
     if (distance > FPS_RENDER_DISTANCE || Math.abs(relative) > FPS_FOV / 2 + 0.15 || !hasFpsLineOfSight(table)) return;
     const screenX = canvasWidth / 2 + (relative / FPS_FOV) * canvasWidth;
+    if (isFpsSpriteOccluded(screenX, distance, canvasWidth)) return;
     let tableHeight = Math.min(canvasHeight * 0.42, 132 / Math.max(0.4, distance));
     if (table.design === 'low') tableHeight *= 0.72;
     const tableWidth = tableHeight * (table.design === 'booth' ? 1.7 : table.design === 'barrel' ? 0.95 : 1.25);
@@ -1317,7 +1328,8 @@ function renderFpsScene(timestamp = 0) {
     document.getElementById('fps-overlay')?.classList.toggle('fps-running', Boolean((fpsKeys.w || fpsKeys.a || fpsKeys.s || fpsKeys.d) && fpsKeys.shift && fpsStamina > 0));
     drawFpsAtmosphere(context, width, height, horizon, timestamp);
 
-    const rayStep = 2;
+    const rayStep = window.innerWidth < 700 ? 2 : 1;
+    if (fpsDepthBuffer.length !== width) fpsDepthBuffer = new Float32Array(width);
     for (let column = 0; column < width; column += rayStep) {
         const rayAngle = fpsPlayer.angle - FPS_FOV / 2 + (column / width) * FPS_FOV;
         let distance = 0;
@@ -1326,6 +1338,7 @@ function renderFpsScene(timestamp = 0) {
             if (isFpsWall(fpsPlayer.x + Math.cos(rayAngle) * distance, fpsPlayer.y + Math.sin(rayAngle) * distance)) break;
         }
         const corrected = Math.max(0.1, distance * Math.cos(rayAngle - fpsPlayer.angle));
+        for (let depthColumn = column; depthColumn < Math.min(width, column + rayStep); depthColumn++) fpsDepthBuffer[depthColumn] = corrected;
         const wallHeight = Math.min(height, height / corrected * 0.82);
         const hitX = fpsPlayer.x + Math.cos(rayAngle) * distance;
         const hitY = fpsPlayer.y + Math.sin(rayAngle) * distance;
@@ -1434,6 +1447,9 @@ function bindFirstPersonControls() {
         if (fpsOpen) fpsKeys[event.key.toLowerCase()] = false;
     });
     window.addEventListener('blur', () => { fpsKeys = {}; });
+    document.addEventListener('pointerlockchange', () => {
+        document.getElementById('fps-overlay')?.classList.toggle('fps-unlocked', fpsOpen && document.pointerLockElement !== fpsCanvas);
+    });
     document.addEventListener('mousemove', event => {
         if (fpsOpen && document.pointerLockElement === fpsCanvas) {
             fpsPlayer.angle += event.movementX * 0.0025;
@@ -1448,6 +1464,10 @@ function bindFirstPersonControls() {
         window.fpsCanvasClickBound = true;
     }
     window.addEventListener('resize', resizeFpsCanvas);
+}
+
+function lockFpsPointer() {
+    if (fpsOpen) fpsCanvas?.requestPointerLock?.();
 }
 
 function toggleFirstPerson() {
@@ -1477,7 +1497,19 @@ function closeFirstPerson() {
     document.body.classList.remove('first-person-open');
     fpsKeys = {};
     fpsCrouched = false;
-    document.getElementById('fps-overlay')?.classList.remove('fps-crouched', 'fps-running');
+    document.getElementById('fps-overlay')?.classList.remove('fps-crouched', 'fps-running', 'fps-unlocked');
+    if (game.shiftServed > 0) {
+        const rating = Math.min(5, 1 + Math.floor(game.shiftServed / 3));
+        const bonus = Math.ceil(game.shiftServed * game.currentMenuPrice * rating * (1 + (game.staff.manager || 0) * 0.12));
+        game.wallet += bonus;
+        game.totalEarned += bonus;
+        game.bestShift = Math.max(game.bestShift || 0, game.shiftServed);
+        game.shiftsCompleted = (game.shiftsCompleted || 0) + 1;
+        showAchievementToast({ icon: '🎖️', title: `${rating}-Star Shift · +$${formatMoney(bonus)}` });
+        game.shiftServed = 0;
+        checkAchievements();
+        saveGame();
+    }
     if (document.pointerLockElement === fpsCanvas) document.exitPointerLock();
     if (fpsAnimationFrame) cancelAnimationFrame(fpsAnimationFrame);
 }
@@ -1591,13 +1623,15 @@ function collectPayment(index) {
     game.combo++;
     game.bestCombo = Math.max(game.bestCombo, game.combo);
     const comboMultiplier = 1 + Math.min(game.combo, 10) * 0.05;
-    let finalValue = (game.currentMenuPrice * mult) * getPrestigeMultiplier() * rushMultiplier * comboMultiplier * getDailySpecial().multiplier * getPopularityMultiplier();
+    const shiftTip = fpsOpen ? 1 + (game.physical.efficiencyLevel || 0) * 0.05 + (game.staff.manager || 0) * 0.08 : 1;
+    let finalValue = (game.currentMenuPrice * mult) * getPrestigeMultiplier() * rushMultiplier * comboMultiplier * getDailySpecial().multiplier * getPopularityMultiplier() * shiftTip;
     
     if (game.idxRecipe >= 999) finalValue *= 1000000;
     
     game.wallet += finalValue;
     game.totalEarned += finalValue;
     game.servedCount++;
+    if (fpsOpen) game.shiftServed = (game.shiftServed || 0) + 1;
     if (seat.charData.isVIP || seat.charData.isCritic) game.vipServed++;
     game.popularity = Math.min(100, game.popularity + (seat.charData.isVIP ? 1.5 : 0.35));
     gainRestaurantXp(Math.max(1, Math.ceil(finalValue / 100)));
