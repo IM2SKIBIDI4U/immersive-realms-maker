@@ -236,7 +236,7 @@ function normalizeGameState() {
         ingredientsReadyFor: null, activeOrder: null, carriedFood: [],
         ...(game.physical || {})
     };
-    game.physical.capacity = Math.max(1, Math.min(4, Number(game.physical.capacity) || 1));
+    game.physical.capacity = Math.max(1, Math.min(8, Number(game.physical.capacity) || 1));
     game.physical.speedLevel = Math.max(0, Number(game.physical.speedLevel) || 0);
     game.physical.cookingLevel = Math.max(0, Number(game.physical.cookingLevel) || 0);
     game.physical.interactionLevel = Math.max(0, Number(game.physical.interactionLevel) || 0);
@@ -1353,9 +1353,16 @@ function renderFpsScene(timestamp = 0) {
         const hitY = fpsPlayer.y + Math.sin(rayAngle) * distance;
         const wallTile = FPS_MAP[Math.floor(hitY)]?.[Math.floor(hitX)] || '#';
         const shade = Math.max(30, Math.min(205, 195 - corrected * 11));
+        const themeWall = game.activeDecor === 'theme-neon'
+            ? [shade * .42, shade * .34, shade * .72]
+            : game.activeDecor === 'theme-zen'
+                ? [shade * .62, shade * .78, shade * .58]
+                : game.activeDecor === 'theme-gold'
+                    ? [shade, shade * .78, shade * .28]
+                    : [shade, shade * .78, shade * .52];
         const wallPalette = wallTile === '#' && Math.floor(hitY) === 0
-            ? [shade * 0.72, shade * 0.58, shade * 0.42]
-            : [shade, shade * 0.78, shade * 0.52];
+            ? themeWall.map(value => value * .78)
+            : themeWall;
         context.fillStyle = night
             ? `rgb(${wallPalette[0] * 0.32},${wallPalette[1] * 0.36},${Math.min(190, wallPalette[2] * 1.25)})`
             : `rgb(${wallPalette[0]},${wallPalette[1]},${wallPalette[2]})`;
