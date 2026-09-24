@@ -2060,6 +2060,47 @@ function openBlackMarket() {
     }
 }
 
+function openCheatMenu() {
+    const panel = document.getElementById('admin-panel');
+    const status = document.getElementById('admin-status');
+    if (status) status.innerText = game.sandboxMode ? 'Sandbox Mode active' : 'Fair save active · first cheat enables Sandbox Mode';
+    panel?.classList.remove('hidden');
+}
+
+function closeCheatMenu() {
+    document.getElementById('admin-panel')?.classList.add('hidden');
+}
+
+function useSandboxCheat(type) {
+    const allowed = ['cash', 'ingredients', 'upgrades', 'stars', 'rush', 'rivals'];
+    if (!allowed.includes(type)) return;
+    if (!game.sandboxMode && !confirm('Enable Sandbox Mode? This save will remain marked as sandbox progress.')) return;
+    game.sandboxMode = true;
+    if (type === 'cash') game.wallet += 1e9;
+    if (type === 'ingredients') Object.keys(game.inv).forEach(key => { game.inv[key] = 1e9; });
+    if (type === 'upgrades') {
+        game.idxTable = Math.min(999, game.idxTable + 100);
+        game.tablesOwned = Math.min(1000, game.idxTable + 1);
+        game.idxRecipe = Math.min(999, game.idxRecipe + 100);
+        game.idxWok = Math.min(999, game.idxWok + 100);
+        game.idxAuto = Math.min(999, game.idxAuto + 100);
+        game.idxAds = Math.min(999, game.idxAds + 100);
+        game.currentMenuPrice = TRACK_RECIPES[Math.max(0, game.idxRecipe - 1)]?.value || game.currentMenuPrice;
+    }
+    if (type === 'stars') game.monkeyMoney = Math.min(50000, game.monkeyMoney + 25);
+    if (type === 'rush') triggerEvent('rush');
+    if (type === 'rivals') {
+        game.rivals.forEach(rival => { rival.hp = 0; });
+        game.rivalsDefeated = game.rivals.length;
+        game.turfMult = 29.5;
+    }
+    const status = document.getElementById('admin-status');
+    if (status) status.innerText = 'Sandbox Mode active';
+    updateUI();
+    updateKitchenUI();
+    saveGame();
+}
+
 let rushTimeout;
 function triggerEvent(type) {
     const toast = document.getElementById('event-toast');
@@ -2152,8 +2193,18 @@ function readSaveEnvelope(raw) {
         if (envelope.checksum !== hashSavePayload(envelope.payload)) throw new Error('Save checksum mismatch');
         return JSON.parse(envelope.payload);
     }
-    // Import older saves once, then immediately rewrite them in protected form.
-    if (envelope && typeof envelope === 'object' && Number.isFinite(envelope.wallet)) return envelope;
+    if (envelope && envelope.version === 2 && typeof envelope.payload === 'string' && !localStorage.getItem(LEGACY_IMPORT_KEY)) {
+        let legacyHash = 2166136261;
+        const legacySource = `rm-fair-kitchen-2026|${envelope.payload}|2`;
+        for (let index = 0; index < legacySource.length; index++) { legacyHash ^= legacySource.charCodeAt(index); legacyHash = Math.imul(legacyHash, 16777619); }
+        if (envelope.checksum !== (legacyHash >>> 0).toString(36)) throw new Error('Legacy checksum mismatch');
+        localStorage.setItem(LEGACY_IMPORT_KEY, '1');
+        return JSON.parse(envelope.payload);
+    }
+    if (envelope && typeof envelope === 'object' && Number.isFinite(envelope.wallet) && !localStorage.getItem(LEGACY_IMPORT_KEY)) {
+        localStorage.setItem(LEGACY_IMPORT_KEY, '1');
+        return envelope;
+    }
     throw new Error('Unsupported save format');
 }
 
@@ -2167,11 +2218,24 @@ function isPlausibleSave(candidate) {
     if (candidate.idxTable < 0 || candidate.idxTable > 999 || candidate.tablesOwned > candidate.idxTable + 1) return false;
     if ([candidate.idxRecipe, candidate.idxWok, candidate.idxAuto, candidate.idxAds].some(value => value < 0 || value > 999)) return false;
     if (candidate.lastSaveTime > Date.now() + 5 * 60 * 1000) return false;
+    if (candidate.inv && Object.values(candidate.inv).some(value => !Number.isFinite(value) || value < 0 || value > 1e12)) return false;
+    if (candidate.staff && Object.values(candidate.staff).some(value => !Number.isFinite(value) || value < 0 || value > 1000)) return false;
+    if (!candidate.sandboxMode) {
+        const earned = Math.max(0, Number(candidate.totalEarned) || 0);
+        const progressionAllowance = 1e9 + earned * 1000 + Math.max(0, Number(candidate.monkeyMoney) || 0) * 1e8;
+        if (candidate.wallet > progressionAllowance) return false;
+        if (candidate.inv && Object.values(candidate.inv).some(value => value > 1e8)) return false;
+    }
+    if (candidate.deliveryActive && (!Number.isFinite(candidate.deliveryActive.endsAt) || candidate.deliveryActive.endsAt > Date.now() + 10 * 60 * 1000)) return false;
     return true;
 }
 
 function saveGame() {
     normalizeGameState();
+    if (!isPlausibleSave(game)) {
+        showAchievementToast({ icon: '🛡️', title: 'Impossible progress blocked' });
+        return;
+    }
     game.lastSaveTime = Date.now();
     const current = localStorage.getItem(SAVE_KEY);
     if (current) {
@@ -2240,4 +2304,18 @@ window.onload = () => {
     customerArrives();   
     runMonkeyLoop(); 
     scheduleGoldenMonkey();
+    setInterval(() => {
+        normalizeGameState();
+        if (!isPlausibleSave(game)) {
+            const backup = localStorage.getItem(SAVE_BACKUP_KEY);
+            try {
+                const recovered = readSaveEnvelope(backup);
+                if (isPlausibleSave(recovered)) game = Object.assign(game, recovered);
+            } catch (_) {
+                game.wallet = Math.min(game.wallet, 1e9 + game.totalEarned * 1000);
+            }
+            updateUI();
+            showAchievementToast({ icon: '🛡️', title: 'Fair-play check restored progress' });
+        }
+    }, 5000);
 };
