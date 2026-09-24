@@ -111,9 +111,10 @@ const INITIAL_RIVALS = [
 const defaultInv = { noodle: 10, broth: 10, spice: 10, egg: 10, boba: 10 };
 const SAVE_KEY = 'RamenUltimateData';
 const SAVE_BACKUP_KEY = 'RamenUltimateBackup';
-const SAVE_VERSION = 2;
-const SAVE_SALT = 'rm-fair-kitchen-2026';
+const SAVE_VERSION = 3;
+const SAVE_SALT = ['rm', 'fair', 'kitchen', '2026'].reverse().join(':');
 const MAX_OFFLINE_MS = 12 * 60 * 60 * 1000;
+const LEGACY_IMPORT_KEY = 'RamenLegacyImported';
 let game = {
     wallet: 150, monkeyMoney: 0, turfMult: 1, lastSaveTime: Date.now(),
     tablesOwned: 1, idxTable: 0, idxRecipe: 0, idxWok: 0, idxAuto: 0, idxSpecial: 0, currentMenuPrice: 50,
@@ -126,10 +127,11 @@ let game = {
     restaurantXp: 0, popularity: 50, dailySpecialIndex: 0,
     specialEndsAt: Date.now() + 86400000,
     nightMode: false, deliveryActive: null, deliveriesCompleted: 0,
-    staffTraining: { waiter: 0, ninja: 0, mascot: 0 }, reviews: [],
+    sandboxMode: false, lifetimeSpent: 0, shiftServed: 0, bestShift: 0, shiftsCompleted: 0,
+    staffTraining: { waiter: 0, ninja: 0, mascot: 0, linecook: 0, manager: 0 }, reviews: [],
     physical: {
         capacity: 1, speedLevel: 0, cookingLevel: 0, interactionLevel: 0,
-        ingredientsReadyFor: null, activeOrder: null, carriedFood: []
+        ingredientsReadyFor: null, activeOrder: null, carriedFood: [], trayLevel: 0, efficiencyLevel: 0
     }
 };
 
@@ -141,7 +143,9 @@ const MISSION_DEFINITIONS = [
     { id: 'vip', icon: '👑', title: 'VIP Treatment', description: 'Serve VIP or critic customers', type: 'vipServed', baseTarget: 1, reward: 750 },
     { id: 'combo', icon: '🔥', title: 'Perfect Service', description: 'Build a payment combo', type: 'bestCombo', baseTarget: 5, reward: 650 },
     { id: 'rivals', icon: '⚔️', title: 'Market Takeover', description: 'Defeat rival restaurants', type: 'rivalsDefeated', baseTarget: 1, reward: 1000 },
-    { id: 'events', icon: '⚡', title: 'Chaos Coordinator', description: 'Trigger special events', type: 'eventsTriggered', baseTarget: 2, reward: 500 }
+    { id: 'events', icon: '⚡', title: 'Chaos Coordinator', description: 'Trigger special events', type: 'eventsTriggered', baseTarget: 2, reward: 500 },
+    { id: 'deliveries', icon: '🚚', title: 'Delivery Circuit', description: 'Complete delivery orders', type: 'deliveriesCompleted', baseTarget: 3, reward: 900 },
+    { id: 'shifts', icon: '🎖️', title: 'Floor Captain', description: 'Complete first-person shifts', type: 'shiftsCompleted', baseTarget: 2, reward: 1200 }
 ];
 
 const ACHIEVEMENT_DEFINITIONS = [
@@ -150,7 +154,9 @@ const ACHIEVEMENT_DEFINITIONS = [
     { id: 'combo-master', icon: '🔥', title: 'Combo Master', description: 'Reach a 10 bowl combo', check: () => game.bestCombo >= 10 },
     { id: 'vip-club', icon: '👑', title: 'VIP Club', description: 'Serve 5 VIPs or critics', check: () => game.vipServed >= 5 },
     { id: 'tycoon', icon: '💎', title: 'True Tycoon', description: 'Earn $100,000 lifetime revenue', check: () => game.totalEarned >= 100000 },
-    { id: 'warlord', icon: '⚔️', title: 'Turf Warlord', description: 'Defeat your first rival', check: () => game.rivalsDefeated >= 1 }
+    { id: 'warlord', icon: '⚔️', title: 'Turf Warlord', description: 'Defeat your first rival', check: () => game.rivalsDefeated >= 1 },
+    { id: 'shift-star', icon: '🎖️', title: 'Five-Star Shift', description: 'Serve 10 guests in one first-person shift', check: () => game.bestShift >= 10 },
+    { id: 'delivery-pro', icon: '🚚', title: 'Delivery Pro', description: 'Complete 25 deliveries', check: () => game.deliveriesCompleted >= 25 }
 ];
 
 const DAILY_SPECIALS = [
