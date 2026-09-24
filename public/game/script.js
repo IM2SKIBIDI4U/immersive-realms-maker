@@ -749,7 +749,7 @@ function interactWithFpsStation(kind) {
             return;
         }
         const order = physical.ingredientsReadyFor;
-        const duration = Math.max(800, 2600 - physical.cookingLevel * 350 - game.idxAuto * 80);
+        const duration = Math.max(500, 2600 - physical.cookingLevel * 350 - game.idxAuto * 80 - (game.staff.linecook || 0) * 180 - (game.staffTraining.linecook || 0) * 55);
         physical.ingredientsReadyFor = null;
         fpsCookingTimer = setTimeout(() => finishFpsCooking(order), duration);
         playSound('cook');
@@ -807,6 +807,7 @@ function completeTakeoutOrder(customer) {
     game.wallet += reward;
     game.totalEarned += reward;
     game.servedCount++;
+    if (fpsOpen) game.shiftServed = (game.shiftServed || 0) + 1;
     game.popularity = Math.min(100, game.popularity + 0.25);
     gainRestaurantXp(Math.max(1, Math.ceil(reward / 100)));
     addReview('A takeout guest left with a perfectly packed bowl.');
@@ -916,14 +917,22 @@ function updateFpsMovement(delta) {
 }
 
 function drawFpsAtmosphere(context, width, height, horizon, timestamp) {
+    const theme = game.activeDecor;
+    const themeColors = theme === 'theme-neon'
+        ? { ceiling: '#11101d', middle: '#30234b', floor: '#130f20', line: '#e056fd' }
+        : theme === 'theme-zen'
+            ? { ceiling: '#24342b', middle: '#6d8067', floor: '#28352b', line: '#b8d8ba' }
+            : theme === 'theme-gold'
+                ? { ceiling: '#3c2910', middle: '#947028', floor: '#35230e', line: '#ffeaa7' }
+                : { ceiling: '#17120e', middle: '#4a3424', floor: '#17100d', line: '#d7ad74' };
     const ceiling = context.createLinearGradient(0, 0, 0, horizon);
-    ceiling.addColorStop(0, game.nightMode ? '#08090d' : '#17120e');
-    ceiling.addColorStop(1, game.nightMode ? '#171323' : '#4a3424');
+    ceiling.addColorStop(0, game.nightMode ? '#08090d' : themeColors.ceiling);
+    ceiling.addColorStop(1, game.nightMode ? '#171323' : themeColors.middle);
     context.fillStyle = ceiling;
     context.fillRect(0, 0, width, horizon);
     const floor = context.createLinearGradient(0, horizon, 0, height);
     floor.addColorStop(0, game.nightMode ? '#17131c' : '#443029');
-    floor.addColorStop(1, game.nightMode ? '#070709' : '#17100d');
+    floor.addColorStop(1, game.nightMode ? '#070709' : themeColors.floor);
     context.fillStyle = floor;
     context.fillRect(0, horizon, width, height - horizon);
     context.save();
@@ -957,7 +966,7 @@ function drawFpsAtmosphere(context, width, height, horizon, timestamp) {
     context.restore();
     context.save();
     context.globalAlpha = game.nightMode ? 0.13 : 0.2;
-    context.strokeStyle = game.nightMode ? '#6c5ce7' : '#d7ad74';
+    context.strokeStyle = game.nightMode ? '#6c5ce7' : themeColors.line;
     context.lineWidth = 1;
     const drift = ((fpsPlayer.x + fpsPlayer.y) * 18) % 46;
     for (let y = horizon + 18; y < height; y += Math.max(18, (y - horizon) * 0.22)) {
