@@ -142,6 +142,7 @@
             </div>
             <button class="modern-btn prestige-btn" id="btn-prestige" onclick="prestigeGame()">🌟 Claim Monkey Money (Req: $1 Trillion)</button>
             <button class="modern-btn black-market-btn" onclick="openBlackMarket()">🕵️ Visit the Black Market</button>
+            <button class="modern-btn sandbox-btn" onclick="openCheatMenu()">🧪 Sandbox Cheat Menu</button>
             <button class="reset-btn" onclick="resetGame()">Hard Reset Data</button>
         </div>
     </div>
@@ -156,16 +157,35 @@
         </div>
     </div>
 
+    <div id="admin-panel" class="hidden" role="dialog" aria-modal="true" aria-labelledby="sandbox-title">
+        <div class="admin-card">
+            <button class="admin-close" onclick="closeCheatMenu()" aria-label="Close cheat menu">✕</button>
+            <span class="admin-kicker">SANDBOX TOOLS</span>
+            <h2 id="sandbox-title">Cheat Menu</h2>
+            <p>Using any cheat permanently marks this save as Sandbox Mode.</p>
+            <div class="admin-grid">
+                <button class="god-btn" onclick="useSandboxCheat('cash')">+$1 Billion</button>
+                <button class="god-btn" onclick="useSandboxCheat('ingredients')">Infinite Ingredients</button>
+                <button class="god-btn" onclick="useSandboxCheat('upgrades')">Upgrade Boost</button>
+                <button class="god-btn" onclick="useSandboxCheat('stars')">+25 Monkey Money</button>
+                <button class="god-btn" onclick="useSandboxCheat('rush')">Force Rush Hour</button>
+                <button class="god-btn danger" onclick="useSandboxCheat('rivals')">Defeat All Rivals</button>
+            </div>
+            <div class="admin-status" id="admin-status">Fair save active</div>
+        </div>
+    </div>
+
     <div id="fps-overlay" class="hidden" aria-label="First person restaurant mode">
         <canvas id="fps-canvas"></canvas>
         <div class="fps-topbar">
-            <div><strong>🍜 RAMEN MONKEY</strong><span>FIRST-PERSON SERVICE SHIFT</span></div>
+            <div><strong>🍜 RAMEN MONKEY</strong><span>FIRST-PERSON SERVICE SHIFT · <b id="save-status">FAIR</b></span></div>
             <div class="fps-actions">
                 <button class="fps-menu-button" onclick="renderFpsUpgradePanel()">⚙ Upgrades <span>U</span></button>
                 <button class="fps-exit" onclick="closeFirstPerson()">✕ Exit Restaurant</button>
             </div>
         </div>
         <div class="fps-crosshair">+</div>
+        <button id="fps-lock-prompt" class="fps-lock-prompt" onclick="lockFpsPointer()">Click to resume mouse look</button>
         <div class="fps-hud">
             <div class="fps-objective">Walk to a table and press <b>E</b></div>
             <div class="fps-status" id="fps-status">Loading restaurant...</div>
@@ -187,7 +207,7 @@
         </div>
     </div>
 
-    <script src="script.js?v=9"></script>
+    <script src="script.js?v=10"></script>
     <div id="achieve-toast" class="hidden-toast">
     🏆 <b id="achieve-name">Achievement Unlocked!</b>
     </div>
