@@ -450,11 +450,11 @@ let waitList = []; let isRushHour = false; let rushMultiplier = 1;
 const FPS_MAP = [
     '################',
     '#..............#',
-    '#..#.....#.....#',
     '#..............#',
-    '#.....##..####.#',
     '#..............#',
-    '#..#........#..#',
+    '#..............#',
+    '#..............#',
+    '#..............#',
     '#..............#',
     '#..............#',
     '################'
@@ -484,7 +484,7 @@ const FPS_WORLD_OBJECTS = [
     { x: 7.5, y: 8.78, kind: 'door', label: 'ENTRANCE' }
 ];
 const FPS_FOV = Math.PI / 3;
-const FPS_RENDER_DISTANCE = 9.5;
+const FPS_RENDER_DISTANCE = 14;
 let fpsOpen = false;
 let fpsAnimationFrame = null;
 let fpsLastFrame = 0;
@@ -823,7 +823,7 @@ function updateFpsHud() {
     const economy = document.getElementById('fps-economy');
     if (!economy) return;
     const physical = game.physical;
-    economy.innerText = `Cash $${formatMoney(game.wallet)} · Orders ${physical.activeOrder === null ? 0 : 1}/${physical.capacity} · Carrying ${getFpsCarryingCount()}/${physical.capacity}`;
+    economy.innerText = `Cash $${formatMoney(game.wallet)} · Shift ${game.shiftServed || 0} served · Orders ${physical.activeOrder === null ? 0 : 1}/${physical.capacity} · Carrying ${getFpsCarryingCount()}/${physical.capacity}`;
     const staminaBar = document.getElementById('fps-stamina-bar');
     if (staminaBar) staminaBar.style.width = `${fpsStamina}%`;
     const stance = document.getElementById('fps-stance');
@@ -1367,6 +1367,11 @@ function renderFpsScene(timestamp = 0) {
             ? `rgb(${wallPalette[0] * 0.32},${wallPalette[1] * 0.36},${Math.min(190, wallPalette[2] * 1.25)})`
             : `rgb(${wallPalette[0]},${wallPalette[1]},${wallPalette[2]})`;
         context.fillRect(column, horizon - wallHeight / 2, rayStep + 1, wallHeight);
+        const wallEdge = Math.min(hitX % 1, hitY % 1);
+        if (wallEdge < .035 || wallEdge > .965) {
+            context.fillStyle = night ? 'rgba(3,4,7,.28)' : 'rgba(55,31,18,.22)';
+            context.fillRect(column, horizon - wallHeight / 2, rayStep + 1, wallHeight);
+        }
         const mortar = (Math.floor(hitX * 4) + Math.floor(hitY * 4)) % 5 === 0;
         if (mortar) {
             context.fillStyle = night ? 'rgba(0,0,0,.13)' : 'rgba(55,31,18,.11)';
