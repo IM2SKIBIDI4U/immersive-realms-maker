@@ -111,9 +111,10 @@ const INITIAL_RIVALS = [
 const defaultInv = { noodle: 10, broth: 10, spice: 10, egg: 10, boba: 10 };
 const SAVE_KEY = 'RamenUltimateData';
 const SAVE_BACKUP_KEY = 'RamenUltimateBackup';
-const SAVE_VERSION = 2;
-const SAVE_SALT = 'rm-fair-kitchen-2026';
+const SAVE_VERSION = 3;
+const SAVE_SALT = ['rm', 'fair', 'kitchen', '2026'].reverse().join(':');
 const MAX_OFFLINE_MS = 12 * 60 * 60 * 1000;
+const LEGACY_IMPORT_KEY = 'RamenLegacyImported';
 let game = {
     wallet: 150, monkeyMoney: 0, turfMult: 1, lastSaveTime: Date.now(),
     tablesOwned: 1, idxTable: 0, idxRecipe: 0, idxWok: 0, idxAuto: 0, idxSpecial: 0, currentMenuPrice: 50,
@@ -126,10 +127,11 @@ let game = {
     restaurantXp: 0, popularity: 50, dailySpecialIndex: 0,
     specialEndsAt: Date.now() + 86400000,
     nightMode: false, deliveryActive: null, deliveriesCompleted: 0,
-    staffTraining: { waiter: 0, ninja: 0, mascot: 0 }, reviews: [],
+    sandboxMode: false, lifetimeSpent: 0, shiftServed: 0, bestShift: 0, shiftsCompleted: 0,
+    staffTraining: { waiter: 0, ninja: 0, mascot: 0, linecook: 0, manager: 0 }, reviews: [],
     physical: {
         capacity: 1, speedLevel: 0, cookingLevel: 0, interactionLevel: 0,
-        ingredientsReadyFor: null, activeOrder: null, carriedFood: []
+        ingredientsReadyFor: null, activeOrder: null, carriedFood: [], trayLevel: 0, efficiencyLevel: 0
     }
 };
 
@@ -141,7 +143,9 @@ const MISSION_DEFINITIONS = [
     { id: 'vip', icon: '👑', title: 'VIP Treatment', description: 'Serve VIP or critic customers', type: 'vipServed', baseTarget: 1, reward: 750 },
     { id: 'combo', icon: '🔥', title: 'Perfect Service', description: 'Build a payment combo', type: 'bestCombo', baseTarget: 5, reward: 650 },
     { id: 'rivals', icon: '⚔️', title: 'Market Takeover', description: 'Defeat rival restaurants', type: 'rivalsDefeated', baseTarget: 1, reward: 1000 },
-    { id: 'events', icon: '⚡', title: 'Chaos Coordinator', description: 'Trigger special events', type: 'eventsTriggered', baseTarget: 2, reward: 500 }
+    { id: 'events', icon: '⚡', title: 'Chaos Coordinator', description: 'Trigger special events', type: 'eventsTriggered', baseTarget: 2, reward: 500 },
+    { id: 'deliveries', icon: '🚚', title: 'Delivery Circuit', description: 'Complete delivery orders', type: 'deliveriesCompleted', baseTarget: 3, reward: 900 },
+    { id: 'shifts', icon: '🎖️', title: 'Floor Captain', description: 'Complete first-person shifts', type: 'shiftsCompleted', baseTarget: 2, reward: 1200 }
 ];
 
 const ACHIEVEMENT_DEFINITIONS = [
@@ -150,7 +154,9 @@ const ACHIEVEMENT_DEFINITIONS = [
     { id: 'combo-master', icon: '🔥', title: 'Combo Master', description: 'Reach a 10 bowl combo', check: () => game.bestCombo >= 10 },
     { id: 'vip-club', icon: '👑', title: 'VIP Club', description: 'Serve 5 VIPs or critics', check: () => game.vipServed >= 5 },
     { id: 'tycoon', icon: '💎', title: 'True Tycoon', description: 'Earn $100,000 lifetime revenue', check: () => game.totalEarned >= 100000 },
-    { id: 'warlord', icon: '⚔️', title: 'Turf Warlord', description: 'Defeat your first rival', check: () => game.rivalsDefeated >= 1 }
+    { id: 'warlord', icon: '⚔️', title: 'Turf Warlord', description: 'Defeat your first rival', check: () => game.rivalsDefeated >= 1 },
+    { id: 'shift-star', icon: '🎖️', title: 'Five-Star Shift', description: 'Serve 10 guests in one first-person shift', check: () => game.bestShift >= 10 },
+    { id: 'delivery-pro', icon: '🚚', title: 'Delivery Pro', description: 'Complete 25 deliveries', check: () => game.deliveriesCompleted >= 25 }
 ];
 
 const DAILY_SPECIALS = [
@@ -230,7 +236,7 @@ function normalizeGameState() {
         ingredientsReadyFor: null, activeOrder: null, carriedFood: [],
         ...(game.physical || {})
     };
-    game.physical.capacity = Math.max(1, Math.min(4, Number(game.physical.capacity) || 1));
+    game.physical.capacity = Math.max(1, Math.min(8, Number(game.physical.capacity) || 1));
     game.physical.speedLevel = Math.max(0, Number(game.physical.speedLevel) || 0);
     game.physical.cookingLevel = Math.max(0, Number(game.physical.cookingLevel) || 0);
     game.physical.interactionLevel = Math.max(0, Number(game.physical.interactionLevel) || 0);
@@ -284,6 +290,14 @@ function gainRestaurantXp(amount) {
         game.wallet += newLevel * 100;
         showAchievementToast({ icon: '🏆', title: `Restaurant Level ${newLevel}!` });
     }
+}
+
+function spendCash(amount) {
+    const value = Math.max(0, Number(amount) || 0);
+    if (game.wallet < value) return false;
+    game.wallet -= value;
+    game.lifetimeSpent = (game.lifetimeSpent || 0) + value;
+    return true;
 }
 
 function rotateDailySpecialIfNeeded() {
@@ -436,11 +450,11 @@ let waitList = []; let isRushHour = false; let rushMultiplier = 1;
 const FPS_MAP = [
     '################',
     '#..............#',
-    '#..#.....#.....#',
     '#..............#',
-    '#.....##..####.#',
     '#..............#',
-    '#..#........#..#',
+    '#..............#',
+    '#..............#',
+    '#..............#',
     '#..............#',
     '#..............#',
     '################'
@@ -470,7 +484,7 @@ const FPS_WORLD_OBJECTS = [
     { x: 7.5, y: 8.78, kind: 'door', label: 'ENTRANCE' }
 ];
 const FPS_FOV = Math.PI / 3;
-const FPS_RENDER_DISTANCE = 9.5;
+const FPS_RENDER_DISTANCE = 14;
 let fpsOpen = false;
 let fpsAnimationFrame = null;
 let fpsLastFrame = 0;
@@ -735,7 +749,7 @@ function interactWithFpsStation(kind) {
             return;
         }
         const order = physical.ingredientsReadyFor;
-        const duration = Math.max(800, 2600 - physical.cookingLevel * 350 - game.idxAuto * 80);
+        const duration = Math.max(500, 2600 - physical.cookingLevel * 350 - game.idxAuto * 80 - (game.staff.linecook || 0) * 180 - (game.staffTraining.linecook || 0) * 55);
         physical.ingredientsReadyFor = null;
         fpsCookingTimer = setTimeout(() => finishFpsCooking(order), duration);
         playSound('cook');
@@ -793,6 +807,7 @@ function completeTakeoutOrder(customer) {
     game.wallet += reward;
     game.totalEarned += reward;
     game.servedCount++;
+    if (fpsOpen) game.shiftServed = (game.shiftServed || 0) + 1;
     game.popularity = Math.min(100, game.popularity + 0.25);
     gainRestaurantXp(Math.max(1, Math.ceil(reward / 100)));
     addReview('A takeout guest left with a perfectly packed bowl.');
@@ -808,7 +823,7 @@ function updateFpsHud() {
     const economy = document.getElementById('fps-economy');
     if (!economy) return;
     const physical = game.physical;
-    economy.innerText = `Cash $${formatMoney(game.wallet)} · Orders ${physical.activeOrder === null ? 0 : 1}/${physical.capacity} · Carrying ${getFpsCarryingCount()}/${physical.capacity}`;
+    economy.innerText = `Cash $${formatMoney(game.wallet)} · Shift ${game.shiftServed || 0} served · Orders ${physical.activeOrder === null ? 0 : 1}/${physical.capacity} · Carrying ${getFpsCarryingCount()}/${physical.capacity}`;
     const staminaBar = document.getElementById('fps-stamina-bar');
     if (staminaBar) staminaBar.style.width = `${fpsStamina}%`;
     const stance = document.getElementById('fps-stance');
@@ -902,14 +917,22 @@ function updateFpsMovement(delta) {
 }
 
 function drawFpsAtmosphere(context, width, height, horizon, timestamp) {
+    const theme = game.activeDecor;
+    const themeColors = theme === 'theme-neon'
+        ? { ceiling: '#11101d', middle: '#30234b', floor: '#130f20', line: '#e056fd' }
+        : theme === 'theme-zen'
+            ? { ceiling: '#24342b', middle: '#6d8067', floor: '#28352b', line: '#b8d8ba' }
+            : theme === 'theme-gold'
+                ? { ceiling: '#3c2910', middle: '#947028', floor: '#35230e', line: '#ffeaa7' }
+                : { ceiling: '#17120e', middle: '#4a3424', floor: '#17100d', line: '#d7ad74' };
     const ceiling = context.createLinearGradient(0, 0, 0, horizon);
-    ceiling.addColorStop(0, game.nightMode ? '#08090d' : '#17120e');
-    ceiling.addColorStop(1, game.nightMode ? '#171323' : '#4a3424');
+    ceiling.addColorStop(0, game.nightMode ? '#08090d' : themeColors.ceiling);
+    ceiling.addColorStop(1, game.nightMode ? '#171323' : themeColors.middle);
     context.fillStyle = ceiling;
     context.fillRect(0, 0, width, horizon);
     const floor = context.createLinearGradient(0, horizon, 0, height);
     floor.addColorStop(0, game.nightMode ? '#17131c' : '#443029');
-    floor.addColorStop(1, game.nightMode ? '#070709' : '#17100d');
+    floor.addColorStop(1, game.nightMode ? '#070709' : themeColors.floor);
     context.fillStyle = floor;
     context.fillRect(0, horizon, width, height - horizon);
     context.save();
@@ -943,7 +966,7 @@ function drawFpsAtmosphere(context, width, height, horizon, timestamp) {
     context.restore();
     context.save();
     context.globalAlpha = game.nightMode ? 0.13 : 0.2;
-    context.strokeStyle = game.nightMode ? '#6c5ce7' : '#d7ad74';
+    context.strokeStyle = game.nightMode ? '#6c5ce7' : themeColors.line;
     context.lineWidth = 1;
     const drift = ((fpsPlayer.x + fpsPlayer.y) * 18) % 46;
     for (let y = horizon + 18; y < height; y += Math.max(18, (y - horizon) * 0.22)) {
@@ -1024,6 +1047,7 @@ function drawFpsDecor(context, decor, canvasWidth, canvasHeight) {
     const relative = normalizeFpsAngle(Math.atan2(dy, dx) - fpsPlayer.angle);
     if (distance > FPS_RENDER_DISTANCE || Math.abs(relative) > FPS_FOV / 2 + 0.2 || !hasFpsLineOfSight(decor)) return;
     const screenX = canvasWidth / 2 + (relative / FPS_FOV) * canvasWidth;
+    if (isFpsSpriteOccluded(screenX, distance, canvasWidth)) return;
     const size = Math.min(canvasHeight * 0.32, 130 / Math.max(0.5, distance));
     const horizon = getFpsHorizon(canvasHeight);
     const centerY = horizon - canvasHeight * 0.16;
@@ -1138,6 +1162,7 @@ function drawFpsWorldObject(context, object, canvasWidth, canvasHeight) {
     const projection = getFpsProjection(object, canvasWidth, canvasHeight);
     if (!projection) return;
     const { screenX, horizon, floorY, size, distance } = projection;
+    if (isFpsSpriteOccluded(screenX, distance, canvasWidth)) return;
     const target = getFpsTargetObject();
     const isTarget = target && target.kind === object.kind;
     context.save();
@@ -1211,6 +1236,7 @@ function drawFpsTable(context, table, canvasWidth, canvasHeight) {
     const relative = normalizeFpsAngle(Math.atan2(dy, dx) - fpsPlayer.angle);
     if (distance > FPS_RENDER_DISTANCE || Math.abs(relative) > FPS_FOV / 2 + 0.15 || !hasFpsLineOfSight(table)) return;
     const screenX = canvasWidth / 2 + (relative / FPS_FOV) * canvasWidth;
+    if (isFpsSpriteOccluded(screenX, distance, canvasWidth)) return;
     let tableHeight = Math.min(canvasHeight * 0.42, 132 / Math.max(0.4, distance));
     if (table.design === 'low') tableHeight *= 0.72;
     const tableWidth = tableHeight * (table.design === 'booth' ? 1.7 : table.design === 'barrel' ? 0.95 : 1.25);
@@ -1311,7 +1337,8 @@ function renderFpsScene(timestamp = 0) {
     document.getElementById('fps-overlay')?.classList.toggle('fps-running', Boolean((fpsKeys.w || fpsKeys.a || fpsKeys.s || fpsKeys.d) && fpsKeys.shift && fpsStamina > 0));
     drawFpsAtmosphere(context, width, height, horizon, timestamp);
 
-    const rayStep = 2;
+    const rayStep = window.innerWidth < 700 ? 2 : 1;
+    if (fpsDepthBuffer.length !== width) fpsDepthBuffer = new Float32Array(width);
     for (let column = 0; column < width; column += rayStep) {
         const rayAngle = fpsPlayer.angle - FPS_FOV / 2 + (column / width) * FPS_FOV;
         let distance = 0;
@@ -1320,18 +1347,31 @@ function renderFpsScene(timestamp = 0) {
             if (isFpsWall(fpsPlayer.x + Math.cos(rayAngle) * distance, fpsPlayer.y + Math.sin(rayAngle) * distance)) break;
         }
         const corrected = Math.max(0.1, distance * Math.cos(rayAngle - fpsPlayer.angle));
+        for (let depthColumn = column; depthColumn < Math.min(width, column + rayStep); depthColumn++) fpsDepthBuffer[depthColumn] = corrected;
         const wallHeight = Math.min(height, height / corrected * 0.82);
         const hitX = fpsPlayer.x + Math.cos(rayAngle) * distance;
         const hitY = fpsPlayer.y + Math.sin(rayAngle) * distance;
         const wallTile = FPS_MAP[Math.floor(hitY)]?.[Math.floor(hitX)] || '#';
         const shade = Math.max(30, Math.min(205, 195 - corrected * 11));
+        const themeWall = game.activeDecor === 'theme-neon'
+            ? [shade * .42, shade * .34, shade * .72]
+            : game.activeDecor === 'theme-zen'
+                ? [shade * .62, shade * .78, shade * .58]
+                : game.activeDecor === 'theme-gold'
+                    ? [shade, shade * .78, shade * .28]
+                    : [shade, shade * .78, shade * .52];
         const wallPalette = wallTile === '#' && Math.floor(hitY) === 0
-            ? [shade * 0.72, shade * 0.58, shade * 0.42]
-            : [shade, shade * 0.78, shade * 0.52];
+            ? themeWall.map(value => value * .78)
+            : themeWall;
         context.fillStyle = night
             ? `rgb(${wallPalette[0] * 0.32},${wallPalette[1] * 0.36},${Math.min(190, wallPalette[2] * 1.25)})`
             : `rgb(${wallPalette[0]},${wallPalette[1]},${wallPalette[2]})`;
         context.fillRect(column, horizon - wallHeight / 2, rayStep + 1, wallHeight);
+        const wallEdge = Math.min(hitX % 1, hitY % 1);
+        if (wallEdge < .035 || wallEdge > .965) {
+            context.fillStyle = night ? 'rgba(3,4,7,.28)' : 'rgba(55,31,18,.22)';
+            context.fillRect(column, horizon - wallHeight / 2, rayStep + 1, wallHeight);
+        }
         const mortar = (Math.floor(hitX * 4) + Math.floor(hitY * 4)) % 5 === 0;
         if (mortar) {
             context.fillStyle = night ? 'rgba(0,0,0,.13)' : 'rgba(55,31,18,.11)';
@@ -1428,6 +1468,9 @@ function bindFirstPersonControls() {
         if (fpsOpen) fpsKeys[event.key.toLowerCase()] = false;
     });
     window.addEventListener('blur', () => { fpsKeys = {}; });
+    document.addEventListener('pointerlockchange', () => {
+        document.getElementById('fps-overlay')?.classList.toggle('fps-unlocked', fpsOpen && document.pointerLockElement !== fpsCanvas);
+    });
     document.addEventListener('mousemove', event => {
         if (fpsOpen && document.pointerLockElement === fpsCanvas) {
             fpsPlayer.angle += event.movementX * 0.0025;
@@ -1442,6 +1485,10 @@ function bindFirstPersonControls() {
         window.fpsCanvasClickBound = true;
     }
     window.addEventListener('resize', resizeFpsCanvas);
+}
+
+function lockFpsPointer() {
+    if (fpsOpen) fpsCanvas?.requestPointerLock?.();
 }
 
 function toggleFirstPerson() {
@@ -1471,7 +1518,19 @@ function closeFirstPerson() {
     document.body.classList.remove('first-person-open');
     fpsKeys = {};
     fpsCrouched = false;
-    document.getElementById('fps-overlay')?.classList.remove('fps-crouched', 'fps-running');
+    document.getElementById('fps-overlay')?.classList.remove('fps-crouched', 'fps-running', 'fps-unlocked');
+    if (game.shiftServed > 0) {
+        const rating = Math.min(5, 1 + Math.floor(game.shiftServed / 3));
+        const bonus = Math.ceil(game.shiftServed * game.currentMenuPrice * rating * (1 + (game.staff.manager || 0) * 0.12));
+        game.wallet += bonus;
+        game.totalEarned += bonus;
+        game.bestShift = Math.max(game.bestShift || 0, game.shiftServed);
+        game.shiftsCompleted = (game.shiftsCompleted || 0) + 1;
+        showAchievementToast({ icon: '🎖️', title: `${rating}-Star Shift · +$${formatMoney(bonus)}` });
+        game.shiftServed = 0;
+        checkAchievements();
+        saveGame();
+    }
     if (document.pointerLockElement === fpsCanvas) document.exitPointerLock();
     if (fpsAnimationFrame) cancelAnimationFrame(fpsAnimationFrame);
 }
@@ -1585,13 +1644,15 @@ function collectPayment(index) {
     game.combo++;
     game.bestCombo = Math.max(game.bestCombo, game.combo);
     const comboMultiplier = 1 + Math.min(game.combo, 10) * 0.05;
-    let finalValue = (game.currentMenuPrice * mult) * getPrestigeMultiplier() * rushMultiplier * comboMultiplier * getDailySpecial().multiplier * getPopularityMultiplier();
+    const shiftTip = fpsOpen ? 1 + (game.physical.efficiencyLevel || 0) * 0.05 + (game.staff.manager || 0) * 0.08 : 1;
+    let finalValue = (game.currentMenuPrice * mult) * getPrestigeMultiplier() * rushMultiplier * comboMultiplier * getDailySpecial().multiplier * getPopularityMultiplier() * shiftTip;
     
     if (game.idxRecipe >= 999) finalValue *= 1000000;
     
     game.wallet += finalValue;
     game.totalEarned += finalValue;
     game.servedCount++;
+    if (fpsOpen) game.shiftServed = (game.shiftServed || 0) + 1;
     if (seat.charData.isVIP || seat.charData.isCritic) game.vipServed++;
     game.popularity = Math.min(100, game.popularity + (seat.charData.isVIP ? 1.5 : 0.35));
     gainRestaurantXp(Math.max(1, Math.ceil(finalValue / 100)));
@@ -1841,6 +1902,8 @@ function updateUI() {
     if(document.getElementById('stat-combo')) document.getElementById('stat-combo').innerText = game.combo;
     if(document.getElementById('stat-level')) document.getElementById('stat-level').innerText = getRestaurantLevel();
     if(document.getElementById('stat-popularity')) document.getElementById('stat-popularity').innerText = Math.round(game.popularity);
+    const saveStatus = document.getElementById('save-status');
+    if (saveStatus) saveStatus.innerText = game.sandboxMode ? 'SANDBOX' : 'FAIR';
     
     let currentRecipeName = (game.idxRecipe > 0 && TRACK_RECIPES[game.idxRecipe-1]) ? TRACK_RECIPES[game.idxRecipe-1].name : RAMEN_NAMES[0];
     if(document.getElementById('stat-menu')) document.getElementById('stat-menu').innerText = `${currentRecipeName} ($${formatMoney(game.currentMenuPrice)})`;
@@ -1990,7 +2053,8 @@ function prestigeGame() {
         let st = (game.monkeyMoney || 0) + 50; 
         let tm = game.turfMult; let d = game.decorOwned; let ad = game.activeDecor; let rv = game.rivals; let ach = game.achievements || [];
         localStorage.clear(); 
-        game = { wallet: 150, monkeyMoney: st, turfMult: tm, lastSaveTime: Date.now(), tablesOwned: 1, idxTable: 0, idxRecipe: 0, idxWok: 0, idxAuto: 0, idxAds: 0, idxSpecial: 0, currentMenuPrice: 50, activeDecor: ad, decorOwned: d, autoRefill: false, staff: {waiter:0,ninja:0,mascot:0}, rivals: rv, inv: {...defaultInv}, upgrades: {}, achievements: ach, autoChefSpeedMulti: 1 }; 
+        const sandboxMode = game.sandboxMode;
+        game = { wallet: 150, monkeyMoney: st, turfMult: tm, lastSaveTime: Date.now(), tablesOwned: 1, idxTable: 0, idxRecipe: 0, idxWok: 0, idxAuto: 0, idxAds: 0, idxSpecial: 0, currentMenuPrice: 50, activeDecor: ad, decorOwned: d, autoRefill: false, staff: {waiter:0,ninja:0,mascot:0,linecook:0,manager:0}, rivals: rv, inv: {...defaultInv}, upgrades: {}, achievements: ach, autoChefSpeedMulti: 1, sandboxMode }; 
         saveGame(); location.reload(); 
     } else if (game.idxRecipe < 999) {
         alert("You must unlock Universal Ramen (Level 1000) before you can franchise!");
@@ -2009,6 +2073,47 @@ function openBlackMarket() {
             alert("⚙️ UPGRADE SUCCESSFUL! Your Auto-Chefs are now permanently faster!");
         } else { alert("❌ Not enough Monkey Money! Defeat rivals or Franchise to earn more."); }
     }
+}
+
+function openCheatMenu() {
+    const panel = document.getElementById('admin-panel');
+    const status = document.getElementById('admin-status');
+    if (status) status.innerText = game.sandboxMode ? 'Sandbox Mode active' : 'Fair save active · first cheat enables Sandbox Mode';
+    panel?.classList.remove('hidden');
+}
+
+function closeCheatMenu() {
+    document.getElementById('admin-panel')?.classList.add('hidden');
+}
+
+function useSandboxCheat(type) {
+    const allowed = ['cash', 'ingredients', 'upgrades', 'stars', 'rush', 'rivals'];
+    if (!allowed.includes(type)) return;
+    if (!game.sandboxMode && !confirm('Enable Sandbox Mode? This save will remain marked as sandbox progress.')) return;
+    game.sandboxMode = true;
+    if (type === 'cash') game.wallet += 1e9;
+    if (type === 'ingredients') Object.keys(game.inv).forEach(key => { game.inv[key] = 1e9; });
+    if (type === 'upgrades') {
+        game.idxTable = Math.min(999, game.idxTable + 100);
+        game.tablesOwned = Math.min(1000, game.idxTable + 1);
+        game.idxRecipe = Math.min(999, game.idxRecipe + 100);
+        game.idxWok = Math.min(999, game.idxWok + 100);
+        game.idxAuto = Math.min(999, game.idxAuto + 100);
+        game.idxAds = Math.min(999, game.idxAds + 100);
+        game.currentMenuPrice = TRACK_RECIPES[Math.max(0, game.idxRecipe - 1)]?.value || game.currentMenuPrice;
+    }
+    if (type === 'stars') game.monkeyMoney = Math.min(50000, game.monkeyMoney + 25);
+    if (type === 'rush') triggerEvent('rush');
+    if (type === 'rivals') {
+        game.rivals.forEach(rival => { rival.hp = 0; });
+        game.rivalsDefeated = game.rivals.length;
+        game.turfMult = 29.5;
+    }
+    const status = document.getElementById('admin-status');
+    if (status) status.innerText = 'Sandbox Mode active';
+    updateUI();
+    updateKitchenUI();
+    saveGame();
 }
 
 let rushTimeout;
@@ -2103,8 +2208,18 @@ function readSaveEnvelope(raw) {
         if (envelope.checksum !== hashSavePayload(envelope.payload)) throw new Error('Save checksum mismatch');
         return JSON.parse(envelope.payload);
     }
-    // Import older saves once, then immediately rewrite them in protected form.
-    if (envelope && typeof envelope === 'object' && Number.isFinite(envelope.wallet)) return envelope;
+    if (envelope && envelope.version === 2 && typeof envelope.payload === 'string' && !localStorage.getItem(LEGACY_IMPORT_KEY)) {
+        let legacyHash = 2166136261;
+        const legacySource = `rm-fair-kitchen-2026|${envelope.payload}|2`;
+        for (let index = 0; index < legacySource.length; index++) { legacyHash ^= legacySource.charCodeAt(index); legacyHash = Math.imul(legacyHash, 16777619); }
+        if (envelope.checksum !== (legacyHash >>> 0).toString(36)) throw new Error('Legacy checksum mismatch');
+        localStorage.setItem(LEGACY_IMPORT_KEY, '1');
+        return JSON.parse(envelope.payload);
+    }
+    if (envelope && typeof envelope === 'object' && Number.isFinite(envelope.wallet) && !localStorage.getItem(LEGACY_IMPORT_KEY)) {
+        localStorage.setItem(LEGACY_IMPORT_KEY, '1');
+        return envelope;
+    }
     throw new Error('Unsupported save format');
 }
 
@@ -2118,11 +2233,24 @@ function isPlausibleSave(candidate) {
     if (candidate.idxTable < 0 || candidate.idxTable > 999 || candidate.tablesOwned > candidate.idxTable + 1) return false;
     if ([candidate.idxRecipe, candidate.idxWok, candidate.idxAuto, candidate.idxAds].some(value => value < 0 || value > 999)) return false;
     if (candidate.lastSaveTime > Date.now() + 5 * 60 * 1000) return false;
+    if (candidate.inv && Object.values(candidate.inv).some(value => !Number.isFinite(value) || value < 0 || value > 1e12)) return false;
+    if (candidate.staff && Object.values(candidate.staff).some(value => !Number.isFinite(value) || value < 0 || value > 1000)) return false;
+    if (!candidate.sandboxMode) {
+        const earned = Math.max(0, Number(candidate.totalEarned) || 0);
+        const progressionAllowance = 1e9 + earned * 1000 + Math.max(0, Number(candidate.monkeyMoney) || 0) * 1e8;
+        if (candidate.wallet > progressionAllowance) return false;
+        if (candidate.inv && Object.values(candidate.inv).some(value => value > 1e8)) return false;
+    }
+    if (candidate.deliveryActive && (!Number.isFinite(candidate.deliveryActive.endsAt) || candidate.deliveryActive.endsAt > Date.now() + 10 * 60 * 1000)) return false;
     return true;
 }
 
 function saveGame() {
     normalizeGameState();
+    if (!isPlausibleSave(game)) {
+        showAchievementToast({ icon: '🛡️', title: 'Impossible progress blocked' });
+        return;
+    }
     game.lastSaveTime = Date.now();
     const current = localStorage.getItem(SAVE_KEY);
     if (current) {
@@ -2191,4 +2319,18 @@ window.onload = () => {
     customerArrives();   
     runMonkeyLoop(); 
     scheduleGoldenMonkey();
+    setInterval(() => {
+        normalizeGameState();
+        if (!isPlausibleSave(game)) {
+            const backup = localStorage.getItem(SAVE_BACKUP_KEY);
+            try {
+                const recovered = readSaveEnvelope(backup);
+                if (isPlausibleSave(recovered)) game = Object.assign(game, recovered);
+            } catch (_) {
+                game.wallet = Math.min(game.wallet, 1e9 + game.totalEarned * 1000);
+            }
+            updateUI();
+            showAchievementToast({ icon: '🛡️', title: 'Fair-play check restored progress' });
+        }
+    }, 5000);
 };
