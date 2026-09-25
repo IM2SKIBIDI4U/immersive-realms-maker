@@ -2094,8 +2094,8 @@ function bindSecretCheatShortcut() {
         const target = event.target;
         if (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement || target?.isContentEditable) return;
         if (event.key.length !== 1 || event.ctrlKey || event.metaKey || event.altKey) return;
-        typed = `${typed}${event.key.toLowerCase()}`.slice(-3);
-        if (typed === 'idk') {
+        typed = `${typed}${event.key}`.slice(-3);
+        if (typed === '123') {
             typed = '';
             openCheatMenu();
         }
