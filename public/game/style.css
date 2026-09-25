@@ -221,7 +221,6 @@ h1 { font-weight: 900; margin: 0 0 20px 0; font-size: 2.5rem; text-shadow: 2px 2
     box-shadow: 0 6px 0 #4834d4;
 }
 
-.sandbox-btn { margin-top: 12px; background: #2d3436; box-shadow: 0 6px 0 #111820; }
 #admin-panel { position: fixed; inset: 0; z-index: 30000; display: grid; place-items: center; padding: 20px; background: rgba(8,10,13,.84); backdrop-filter: blur(8px); }
 .admin-card { position: relative; width: min(620px, 100%); padding: 28px; color: #f5f6fa; border: 1px solid rgba(85,239,196,.35); border-radius: 12px; background: #151b22; box-shadow: 0 28px 80px rgba(0,0,0,.55); }
 .admin-card h2 { margin: 4px 0; font-size: 2rem; }
