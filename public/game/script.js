@@ -2086,6 +2086,22 @@ function closeCheatMenu() {
     document.getElementById('admin-panel')?.classList.add('hidden');
 }
 
+function bindSecretCheatShortcut() {
+    if (window.secretCheatShortcutBound) return;
+    window.secretCheatShortcutBound = true;
+    let typed = '';
+    document.addEventListener('keydown', event => {
+        const target = event.target;
+        if (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement || target?.isContentEditable) return;
+        if (event.key.length !== 1 || event.ctrlKey || event.metaKey || event.altKey) return;
+        typed = `${typed}${event.key.toLowerCase()}`.slice(-3);
+        if (typed === 'idk') {
+            typed = '';
+            openCheatMenu();
+        }
+    });
+}
+
 function useSandboxCheat(type) {
     const allowed = ['cash', 'ingredients', 'upgrades', 'stars', 'rush', 'rivals'];
     if (!allowed.includes(type)) return;
@@ -2312,6 +2328,7 @@ function closeOfflineModal() {
 // --- BOOT UP THE GAME ---
 window.onload = () => {
     loadGame();          
+    bindSecretCheatShortcut();
     applyTheme();
     initTables();        
     updateUI();          
